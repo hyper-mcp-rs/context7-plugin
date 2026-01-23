@@ -1,63 +1,69 @@
-# crates-io
+# Context7 API Tools Plugin
 
-A plugin that fetches crate information and latest versions from crates.io.
-
-## What it does
-
-Provides two main functionalities:
-1. `crates_io_latest_version`: Fetches the latest version of multiple crates
-2. `crates_io_crate_info`: Fetches detailed information about multiple crates including description, downloads, repository, documentation, etc.
+This plugin provides tools to interact with the Context7 API, allowing for resolving library IDs and fetching documentation.
 
 ## Usage
 
-Call with:
-```json
+```
 {
   "plugins": [
     {
-      "name": "crates-io",
-      "path": "oci://ghcr.io/hyper-mcp-rs/crates-io-plugin:latest",
+      "name": "context7",
+      "path": "oci://ghcr.io/tuananh/context7-plugin:nightly",
       "runtime_config": {
-        "allowed_hosts": ["crates.io"]
+        "allowed_hosts": ["context7.com"]
       }
     }
   ]
 }
 ```
 
-### Example Usage
+## Tools
 
-1. Get latest version of multiple crates:
+### 1. `c7_resolve_library_id`
+
+**Description:** Resolves a package name to a Context7-compatible library ID and returns a list of matching libraries. You MUST call this function before 'c7_get_library_docs' to obtain a valid Context7-compatible library ID. When selecting the best match, consider: - Name similarity to the query - Description relevance - Code Snippet count (documentation coverage) - GitHub Stars (popularity) Return the selected library ID and explain your choice. If there are multiple good matches, mention this but proceed with the most relevant one.
+
+**Input Schema:**
+An object with the following properties:
+- `library_name` (string, required): The general name of the library (e.g., 'React', 'upstash/redis').
+
+**Example Input:**
 ```json
 {
-  "name": "crates_io_latest_version",
-  "params": {
-    "crate_names": "serde,tokio,clap"
-  }
+  "library_name": "upstash/redis"
 }
 ```
 
-2. Get detailed information about multiple crates:
+**Output:**
+A JSON string containing the resolved Context7 compatible library ID.
+
+**Example Output:**
 ```json
 {
-  "name": "crates_io_crate_info",
-  "params": {
-    "crate_names": "serde,tokio,clap"
-  }
+  "context7_compatible_library_id": "upstash_redis_id"
 }
 ```
 
-Returns:
-- For `crates_io_latest_version`: A JSON object mapping crate names to their latest version numbers
-- For `crates_io_crate_info`: An array of JSON objects containing detailed crate information for each crate, including:
-  - Name
-  - Description
-  - Latest version
-  - Download count
-  - Repository URL
-  - Documentation URL
-  - Homepage URL
-  - Keywords
-  - Categories
-  - License
-  - Creation and update timestamps
+### 2. `c7_get_library_docs`
+
+**Description:** Fetches up-to-date documentation for a library. You must call 'c7_resolve_library_id' first to obtain the exact Context7-compatible library ID required to use this tool.
+
+**Input Schema:**
+An object with the following properties:
+- `context7_compatible_library_id` (string, required): The Context7-compatible ID for the library.
+- `topic` (string, optional): Focus the docs on a specific topic (e.g., 'routing', 'hooks').
+- `tokens` (integer, optional): Max number of tokens for the documentation (default: 10000).
+
+**Example Input:**
+```json
+{
+  "context7_compatible_library_id": "upstash_redis_id",
+  "topic": "data_types",
+  "tokens": 5000
+}
+```
+
+**Output:**
+
+The fetched documentation in text format.
