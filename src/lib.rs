@@ -4,13 +4,13 @@ use anyhow::Result;
 use extism_pdk::*;
 use pdk::types::*;
 use schemars::{JsonSchema, schema_for};
-use serde_json::{Map, Value, json, map};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use url::Url;
 
 const CONTEXT7_API_BASE_URL: &str = "https://context7.com/api"; // Guessed API base URL
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[encoding(Json)]
 struct ResolveLibraryIdArguments {
     #[schemars(
         description = "Library name to search for and retrieve a Context7-compatible library ID."
@@ -28,17 +28,16 @@ struct ResolveLibraryIdArguments {
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[encoding(Json)]
 #[serde(rename_all = "lowercase")]
 enum DocumentState {
     Delete,
     Error,
     Finalized,
+    #[default]
     Initial,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[encoding(Json)]
 struct Library {
     id: String,
     title: String,
@@ -64,13 +63,13 @@ struct Library {
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[encoding(Json)]
 struct ResolveLibraryIdResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
     results: Vec<Library>,
 }
 
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 struct QueryDocsArguments {
     #[schemars(
         description = "Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js', '/supabase/supabase', \
@@ -80,7 +79,7 @@ struct QueryDocsArguments {
     #[serde(rename = "libraryId")]
     library_id: String,
 
-    #[schemar(
+    #[schemars(
         description = "The question or task you need help with. Be specific and include relevant details. \
         Good: 'How to set up authentication with JWT in Express.js' or 'React useEffect cleanup function examples'. \
         Bad: 'auth' or 'hooks'. The query is sent to the Context7 API for processing. Do not include any sensitive or \
@@ -93,7 +92,7 @@ fn error_result(error: String) -> CallToolResult {
     CallToolResult {
         is_error: Some(true),
         content: vec![ContentBlock::Text(TextContent {
-            text: e.to_string(),
+            text: error,
             ..Default::default()
         })],
 
@@ -105,12 +104,14 @@ pub(crate) fn call_tool(input: CallToolRequest) -> Result<CallToolResult> {
     match input.request.name.as_str() {
         "resolve_library_id" => resolve_library_id(input),
         "query_docs" => query_docs(input),
-        _ => Ok(error_result(format!("Unknown tool: {}", input.params.name))),
+        _ => Ok(error_result(format!(
+            "Unknown tool: {}",
+            input.request.name
+        ))),
     }
 }
 
 pub(crate) fn list_tools(_input: ListToolsRequest) -> Result<ListToolsResult> {
-    let schema = schema_for!(ResolveLibraryIdArguments);
     Ok(ListToolsResult {
         tools: vec![
             Tool {
@@ -186,7 +187,7 @@ fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
         .append_pair("libraryId", &args.library_id)
         .append_pair("query", &args.query);
 
-    let mut req = HttpRequest::new(&url).with_method("GET");
+    let mut req = HttpRequest::new(url.as_str()).with_method("GET");
     req.headers.insert(
         "X-Context7-Source".to_string(),
         "hyper-mcp/context7-plugin".to_string(),
@@ -235,7 +236,7 @@ fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
         .append_pair("libraryName", &args.library_name)
         .append_pair("query", &args.query);
 
-    let mut req = HttpRequest::new(&url).with_method("GET");
+    let mut req = HttpRequest::new(url.as_str()).with_method("GET");
     req.headers.insert(
         "X-Context7-Source".to_string(),
         "hyper-mcp/context7-plugin".to_string(),
@@ -248,6 +249,7 @@ fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
 
     match http::request::<()>(&req, None) {
         Ok(res) => {
+            let body_str = String::from_utf8_lossy(&res.body()).to_string();
             if res.status_code() >= 200 && res.status_code() < 300 {
                 match serde_json::from_str::<ResolveLibraryIdResponse>(&body_str) {
                     Ok(context7_response) => {
@@ -278,10 +280,43 @@ fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
                 Ok(error_result(format!(
                     "API request failed with status {}: {}",
                     res.status_code(),
-                    String::from_utf8_lossy(&res.body()).to_string(),
+                    body_str,
                 )))
             }
         }
         Err(e) => Ok(error_result(e.to_string())),
     }
+}
+
+// Stub functions for MCP handlers not implemented in this tools-only plugin
+pub(crate) fn complete(_input: CompleteRequest) -> Result<CompleteResult> {
+    Ok(CompleteResult::default())
+}
+
+pub(crate) fn get_prompt(_input: GetPromptRequest) -> Result<GetPromptResult> {
+    Err(anyhow::anyhow!("Prompts are not supported by this plugin"))
+}
+
+pub(crate) fn list_prompts(_input: ListPromptsRequest) -> Result<ListPromptsResult> {
+    Ok(ListPromptsResult::default())
+}
+
+pub(crate) fn list_resource_templates(
+    _input: ListResourceTemplatesRequest,
+) -> Result<ListResourceTemplatesResult> {
+    Ok(ListResourceTemplatesResult::default())
+}
+
+pub(crate) fn list_resources(_input: ListResourcesRequest) -> Result<ListResourcesResult> {
+    Ok(ListResourcesResult::default())
+}
+
+pub(crate) fn on_roots_list_changed(_input: Value) -> Result<()> {
+    Ok(())
+}
+
+pub(crate) fn read_resource(_input: ReadResourceRequest) -> Result<ReadResourceResult> {
+    Err(anyhow::anyhow!(
+        "Resources are not supported by this plugin"
+    ))
 }
