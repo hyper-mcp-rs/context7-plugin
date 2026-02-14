@@ -1,356 +1,287 @@
 mod pdk;
 
+use anyhow::Result;
 use extism_pdk::*;
-use pdk::types::{
-    CallToolRequest, CallToolResult, Content, ContentType, ListToolsResult, ToolDescription,
-};
-use serde_json::{Value as JsonValue, json};
-use urlencoding::encode;
+use pdk::types::*;
+use schemars::{JsonSchema, schema_for};
+use serde_json::{Map, Value, json, map};
+use url::Url;
 
 const CONTEXT7_API_BASE_URL: &str = "https://context7.com/api"; // Guessed API base URL
 
-pub(crate) fn call(input: CallToolRequest) -> Result<CallToolResult, Error> {
-    match input.params.name.as_str() {
-        "c7_resolve_library_id" => c7_resolve_library_id(input),
-        "c7_get_library_docs" => c7_get_library_docs(input),
-        _ => Ok(CallToolResult {
-            is_error: Some(true),
-            content: vec![Content {
-                annotations: None,
-                text: Some(format!("Unknown tool: {}", input.params.name)),
-                mime_type: None,
-                r#type: ContentType::Text,
-                data: None,
-            }],
-        }),
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[encoding(Json)]
+struct ResolveLibraryIdArguments {
+    #[schemars(
+        description = "Library name to search for and retrieve a Context7-compatible library ID."
+    )]
+    #[serde(rename = "libraryName")]
+    library_name: String,
+
+    #[schemars(
+        description = "The question or task you need help with. This is used to rank library results \
+        by relevance to what the user is trying to accomplish. The query is sent to the Context7 API for processing. \
+        Do not include any sensitive or confidential information such as API keys, passwords, credentials, personal data, \
+        or proprietary code in your query."
+    )]
+    query: String,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[encoding(Json)]
+#[serde(rename_all = "lowercase")]
+enum DocumentState {
+    Delete,
+    Error,
+    Finalized,
+    Initial,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[encoding(Json)]
+struct Library {
+    id: String,
+    title: String,
+    description: String,
+    branch: String,
+    #[serde(rename = "lastUpdateDate")]
+    last_update_date: String,
+    state: DocumentState,
+    #[serde(rename = "totalTokens")]
+    total_tokens: f64,
+    #[serde(rename = "totalSnippets")]
+    total_snippets: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stars: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "trustScore")]
+    trust_score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "benchmarkScore")]
+    benchmark_score: Option<f64>,
+    #[serde(default)]
+    versions: Vec<String>,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[encoding(Json)]
+struct ResolveLibraryIdResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    results: Vec<Library>,
+}
+
+struct QueryDocsArguments {
+    #[schemars(
+        description = "Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js', '/supabase/supabase', \
+        '/vercel/next.js/v14.3.0-canary.87') retrieved from 'resolve_library_id' or directly from user query in the format '/org/project' \
+        or '/org/project/version'."
+    )]
+    #[serde(rename = "libraryId")]
+    library_id: String,
+
+    #[schemar(
+        description = "The question or task you need help with. Be specific and include relevant details. \
+        Good: 'How to set up authentication with JWT in Express.js' or 'React useEffect cleanup function examples'. \
+        Bad: 'auth' or 'hooks'. The query is sent to the Context7 API for processing. Do not include any sensitive or \
+        confidential information such as API keys, passwords, credentials, personal data, or proprietary code in your query."
+    )]
+    query: String,
+}
+
+fn error_result(error: String) -> CallToolResult {
+    CallToolResult {
+        is_error: Some(true),
+        content: vec![ContentBlock::Text(TextContent {
+            text: e.to_string(),
+            ..Default::default()
+        })],
+
+        ..Default::default()
     }
 }
 
-fn c7_resolve_library_id(input: CallToolRequest) -> Result<CallToolResult, Error> {
-    let args = input.params.arguments.unwrap_or_default();
-    let library_name_val = args.get("library_name").unwrap_or(&JsonValue::Null);
-
-    if let JsonValue::String(library_name_as_query) = library_name_val {
-        let encoded_query = encode(library_name_as_query);
-        let url = format!(
-            "{}/v1/search?query={}",
-            CONTEXT7_API_BASE_URL, encoded_query
-        );
-
-        let mut req = HttpRequest::new(&url).with_method("GET");
-        req.headers
-            .insert("X-Context7-Source".to_string(), "mcp-server".to_string());
-
-        match http::request::<()>(&req, None) {
-            Ok(res) => {
-                let body_str = String::from_utf8_lossy(&res.body()).to_string();
-                if res.status_code() >= 200 && res.status_code() < 300 {
-                    match serde_json::from_str::<JsonValue>(&body_str) {
-                        Ok(parsed_json) => {
-                            let mut results_text_parts = Vec::new();
-
-                            // Check if the root is an object and has a "results" field which is an array
-                            if let Some(results_node) = parsed_json.get("results") {
-                                if let JsonValue::Array(results_array) = results_node {
-                                    if results_array.is_empty() {
-                                        results_text_parts.push(
-                                            "No libraries found matching your query.".to_string(),
-                                        );
-                                    } else {
-                                        for result_item in results_array {
-                                            let mut item_details = Vec::new();
-
-                                            let title = result_item
-                                                .get("title")
-                                                .and_then(JsonValue::as_str)
-                                                .unwrap_or("N/A");
-                                            item_details.push(format!("- Title: {}", title));
-
-                                            let id = result_item
-                                                .get("id")
-                                                .and_then(JsonValue::as_str)
-                                                .unwrap_or("N/A");
-                                            item_details.push(format!(
-                                                "- Context7-compatible library ID: {}",
-                                                id
-                                            ));
-
-                                            let description = result_item
-                                                .get("description")
-                                                .and_then(JsonValue::as_str)
-                                                .unwrap_or("N/A");
-                                            item_details
-                                                .push(format!("- Description: {}", description));
-
-                                            if let Some(v) = result_item
-                                                .get("totalSnippets")
-                                                .and_then(JsonValue::as_i64)
-                                                .filter(|&v| v >= 0)
-                                            {
-                                                item_details.push(format!("- Code Snippets: {}", v))
-                                            }
-
-                                            if let Some(v) = result_item
-                                                .get("stars")
-                                                .and_then(JsonValue::as_i64)
-                                                .filter(|&v| v >= 0)
-                                            {
-                                                item_details.push(format!("- GitHub Stars: {}", v))
-                                            }
-
-                                            results_text_parts.push(item_details.join("\n"));
-                                        }
-                                    }
-                                } else {
-                                    results_text_parts.push("API response 'results' field was not an array as expected.".to_string());
-                                }
-                            } else {
-                                results_text_parts.push(
-                                    "API response did not contain a 'results' field as expected."
-                                        .to_string(),
-                                );
-                            }
-
-                            let header = "Available Libraries (top matches):\n\nEach result includes information like:\n- Title: Library or package name\n- Context7-compatible library ID: Identifier (format: /org/repo)\n- Description: Short summary\n- Code Snippets: Number of available code examples (if available)\n- GitHub Stars: Popularity indicator (if available)\n\nFor best results, select libraries based on name match, popularity (stars), snippet coverage, and relevance to your use case.\n\n---\n";
-                            let final_text =
-                                format!("{}{}", header, results_text_parts.join("\n\n"));
-
-                            Ok(CallToolResult {
-                                is_error: None,
-                                content: vec![Content {
-                                    annotations: None,
-                                    text: Some(final_text),
-                                    mime_type: Some("text/markdown".to_string()),
-                                    r#type: ContentType::Text,
-                                    data: None,
-                                }],
-                            })
-                        }
-                        Err(e) => {
-                            // Failed to parse the JSON body
-                            Ok(CallToolResult {
-                                is_error: Some(true),
-                                content: vec![Content {
-                                    annotations: None,
-                                    text: Some(format!(
-                                        "Failed to parse API response JSON: {}. Body: {}",
-                                        e, body_str
-                                    )),
-                                    mime_type: None,
-                                    r#type: ContentType::Text,
-                                    data: None,
-                                }],
-                            })
-                        }
-                    }
-                } else {
-                    Ok(CallToolResult {
-                        is_error: Some(true),
-                        content: vec![Content {
-                            annotations: None,
-                            text: Some(format!(
-                                "API request failed with status {}: {}",
-                                res.status_code(),
-                                body_str
-                            )),
-                            mime_type: None,
-                            r#type: ContentType::Text,
-                            data: None,
-                        }],
-                    })
-                }
-            }
-            Err(e) => Ok(CallToolResult {
-                is_error: Some(true),
-                content: vec![Content {
-                    annotations: None,
-                    text: Some(format!("HTTP request failed: {}", e)),
-                    mime_type: None,
-                    r#type: ContentType::Text,
-                    data: None,
-                }],
-            }),
-        }
-    } else {
-        Ok(CallToolResult {
-            is_error: Some(true),
-            content: vec![Content {
-                annotations: None,
-                text: Some(
-                    "Missing required parameter: library_name (or not a string)".to_string(),
-                ),
-                mime_type: None,
-                r#type: ContentType::Text,
-                data: None,
-            }],
-        })
+pub(crate) fn call_tool(input: CallToolRequest) -> Result<CallToolResult> {
+    match input.request.name.as_str() {
+        "resolve_library_id" => resolve_library_id(input),
+        "query_docs" => query_docs(input),
+        _ => Ok(error_result(format!("Unknown tool: {}", input.params.name))),
     }
 }
 
-fn c7_get_library_docs(input: CallToolRequest) -> Result<CallToolResult, Error> {
-    let args = input.params.arguments.unwrap_or_default();
-    let library_id_json_val = args
-        .get("context7_compatible_library_id")
-        .unwrap_or(&JsonValue::Null);
-
-    if let JsonValue::String(original_id_str) = library_id_json_val {
-        let mut id_for_path = original_id_str.clone();
-        let mut folders_value_opt: Option<String> = None;
-
-        if let Some(idx) = original_id_str.rfind("?folders=") {
-            let (id_part, folders_part_with_query) = original_id_str.split_at(idx);
-            id_for_path = id_part.to_string();
-            folders_value_opt = Some(
-                folders_part_with_query
-                    .trim_start_matches("?folders=")
-                    .to_string(),
-            );
-        }
-
-        let mut query_params_vec = vec![format!(
-            "context7CompatibleLibraryID={}",
-            encode(original_id_str) // Use the original, full ID string for this query parameter
-        )];
-
-        if let Some(folders_val) = &folders_value_opt
-            && !folders_val.is_empty()
-        {
-            query_params_vec.push(format!("folders={}", encode(folders_val)));
-        }
-
-        if let Some(JsonValue::String(topic_str)) = args.get("topic")
-            && !topic_str.is_empty()
-        {
-            // Ensure topic is not empty before adding
-            query_params_vec.push(format!("topic={}", encode(topic_str)));
-        }
-
-        if let Some(JsonValue::Number(tokens_num_json)) = args.get("tokens") {
-            if let Some(tokens_f64) = tokens_num_json.as_f64() {
-                query_params_vec.push(format!("tokens={}", tokens_f64 as i64));
-            } else if let Some(tokens_i64) = tokens_num_json.as_i64() {
-                query_params_vec.push(format!("tokens={}", tokens_i64));
-            }
-        }
-
-        let final_id_for_path_segment = id_for_path.strip_prefix("/").unwrap_or(&id_for_path);
-
-        let query_params = query_params_vec.join("&");
-        let url = format!(
-            "{}/v1/{}/?{}", // Corrected URL: ensure '?' before query parameters
-            CONTEXT7_API_BASE_URL, final_id_for_path_segment, query_params
-        );
-
-        let mut req = HttpRequest::new(&url).with_method("GET");
-        req.headers
-            .insert("X-Context7-Source".to_string(), "mcp-server".to_string());
-
-        match http::request::<()>(&req, None) {
-            Ok(res) => {
-                let body_str = String::from_utf8_lossy(&res.body()).to_string();
-                if res.status_code() >= 200 && res.status_code() < 300 {
-                    // Directly use the body_str as markdown content
-                    Ok(CallToolResult {
-                        is_error: None,
-                        content: vec![Content {
-                            annotations: None,
-                            text: Some(body_str),
-                            mime_type: Some("text/markdown".to_string()), // Assuming it's still markdown
-                            r#type: ContentType::Text,
-                            data: None,
-                        }],
-                    })
-                } else {
-                    Ok(CallToolResult {
-                        is_error: Some(true),
-                        content: vec![Content {
-                            annotations: None,
-                            text: Some(format!(
-                                "API request for docs (URL: {}) failed with status {}: {}",
-                                url,
-                                res.status_code(),
-                                body_str
-                            )),
-                            mime_type: None,
-                            r#type: ContentType::Text,
-                            data: None,
-                        }],
-                    })
-                }
-            }
-            Err(e) => Ok(CallToolResult {
-                is_error: Some(true),
-                content: vec![Content {
-                    annotations: None,
-                    text: Some(format!("HTTP request for docs failed: {}, URL: {}", e, url)),
-                    mime_type: None,
-                    r#type: ContentType::Text,
-                    data: None,
-                }],
-            }),
-        }
-    } else {
-        Ok(CallToolResult {
-            is_error: Some(true),
-            content: vec![Content {
-                annotations: None,
-                text: Some(
-                    "Missing required parameter: context7_compatible_library_id (or not a string)"
-                        .to_string(),
-                ),
-                mime_type: None,
-                r#type: ContentType::Text,
-                data: None,
-            }],
-        })
-    }
-}
-
-pub(crate) fn describe() -> Result<ListToolsResult, Error> {
+pub(crate) fn list_tools(_input: ListToolsRequest) -> Result<ListToolsResult> {
+    let schema = schema_for!(ResolveLibraryIdArguments);
     Ok(ListToolsResult {
         tools: vec![
-            ToolDescription {
-                name: "c7_resolve_library_id".into(),
-                description: "Resolves a package name to a Context7-compatible library ID and returns a list of matching libraries. You MUST call this function before 'c7_get_library_docs' to obtain a valid Context7-compatible library ID. When selecting the best match, consider: - Name similarity to the query - Description relevance - Code Snippet count (documentation coverage) - GitHub Stars (popularity) Return the selected library ID and explain your choice. If there are multiple good matches, mention this but proceed with the most relevant one.".into(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "library_name": {
-                            "type": "string",
-                            "description": "Library name to search for and retrieve a Context7-compatible library ID.",
-                        },
-                    },
-                    "required": ["library_name"],
-                })
-                .as_object()
-                .unwrap()
-                .clone(),
+            Tool {
+              name: "query_docs".to_string(),
+              annotations: Some(ToolAnnotations{
+                  read_only_hint: Some(true),
+
+                  ..Default::default()
+              }),
+              description: Some(
+                  r#"Retrieves and queries up-to-date documentation and code examples from Context7 for any programming library or framework.
+
+                  You must call 'resolve_library_id' first to obtain the exact Context7-compatible library ID required to use this tool, UNLESS the user explicitly provides a library ID in the format '/org/project' or '/org/project/version' in their query.
+
+                  IMPORTANT: Do not call this tool more than 3 times per question. If you cannot find what you need after 3 calls, use the best information you have."#.to_string()
+              ),
+              input_schema: schema_for!(QueryDocsArguments),
+              title: Some("Query Documentation".to_string()),
+
+              ..Default::default()
             },
-            ToolDescription {
-                name: "c7_get_library_docs".into(),
-                description: "Fetches up-to-date documentation for a library. You must call 'c7_resolve_library_id' first to obtain the exact Context7-compatible library ID required to use this tool.".into(),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "context7_compatible_library_id": {
-                            "type": "string",
-                            "description": "Exact Context7-compatible library ID (e.g., 'mongodb/docs', 'vercel/nextjs') retrieved from 'c7_resolve_library_id'.",
-                        },
-                        "topic": {
-                            "type": "string",
-                            "description": "Topic to focus documentation on (e.g., 'hooks', 'routing').",
-                        },
-                        "tokens": {
-                            "type": "integer",
-                            "description": "Maximum number of tokens of documentation to retrieve (default: 10000). Higher values provide more context but consume more tokens.",
-                        },
-                    },
-                    "required": ["context7_compatible_library_id"],
-                })
-                .as_object()
-                .unwrap()
-                .clone(),
-            },
+            Tool {
+                name: "resolve_library_id".to_string(),
+                annotations: Some(ToolAnnotations{
+                    read_only_hint: Some(true),
+
+                    ..Default::default()
+                }),
+                description: Some(
+                r#"Resolves a package/product name to a Context7-compatible library ID and returns matching libraries.
+
+                You MUST call this function before 'query_docs' to obtain a valid Context7-compatible library ID UNLESS the user explicitly provides a library ID in the format '/org/project' or '/org/project/version' in their query.
+
+                Selection Process:
+                1. Analyze the query to understand what library/package the user is looking for
+                2. Return the most relevant match based on:
+                - Name similarity to the query (exact matches prioritized)
+                - Description relevance to the query's intent
+                - Documentation coverage (prioritize libraries with higher Code Snippet counts)
+                - Source reputation (consider libraries with High or Medium reputation more authoritative)
+                - Benchmark Score: Quality indicator (100 is the highest score)
+
+                Response Format:
+                - Return the selected library ID in a clearly marked section
+                - Provide a brief explanation for why this library was chosen
+                - If multiple good matches exist, acknowledge this but proceed with the most relevant one
+                - If no good matches exist, clearly state this and suggest query refinements
+
+                For ambiguous queries, request clarification before proceeding with a best-guess match.
+
+                IMPORTANT: Do not call this tool more than 3 times per question. If you cannot find what you need after 3 calls, use the best result you have."#.to_string(),
+                ),
+                input_schema: schema_for!(ResolveLibraryIdArguments),
+                output_schema: Some(schema_for!(ResolveLibraryIdResponse)),
+                title: Some("Resolve Context7 Library ID".to_string()),
+
+                ..Default::default()
+            }
         ],
     })
+}
+
+fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
+    let args: QueryDocsArguments =
+        serde_json::from_value(Value::Object(input.request.arguments.unwrap_or_default()))?;
+    let mut url = match Url::parse(&format!("{}/v2/context", CONTEXT7_API_BASE_URL)) {
+        Ok(url) => url,
+        Err(e) => {
+            return Ok(error_result(e.to_string()));
+        }
+    };
+    url.query_pairs_mut()
+        .append_pair("libraryId", &args.library_id)
+        .append_pair("query", &args.query);
+
+    let mut req = HttpRequest::new(&url).with_method("GET");
+    req.headers.insert(
+        "X-Context7-Source".to_string(),
+        "hyper-mcp/context7-plugin".to_string(),
+    );
+    req.headers.insert(
+        "X-Context7-Server-Version".to_string(),
+        env!("CARGO_PKG_VERSION").to_string(),
+    );
+    // TODO: Add authorization, gotten from keyring secret
+
+    match http::request::<()>(&req, None) {
+        Ok(res) => {
+            let body = String::from_utf8_lossy(&res.body()).to_string();
+            if res.status_code() >= 200 && res.status_code() < 300 {
+                Ok(CallToolResult {
+                    content: vec![ContentBlock::Text(TextContent {
+                        text: body,
+
+                        ..Default::default()
+                    })],
+
+                    ..Default::default()
+                })
+            } else {
+                Ok(error_result(format!(
+                    "API request failed with status {}: {}",
+                    res.status_code(),
+                    body,
+                )))
+            }
+        }
+        Err(e) => Ok(error_result(e.to_string())),
+    }
+}
+
+fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
+    let args: ResolveLibraryIdArguments =
+        serde_json::from_value(Value::Object(input.request.arguments.unwrap_or_default()))?;
+    let mut url = match Url::parse(&format!("{}/v2/libs/search", CONTEXT7_API_BASE_URL)) {
+        Ok(url) => url,
+        Err(e) => {
+            return Ok(error_result(e.to_string()));
+        }
+    };
+    url.query_pairs_mut()
+        .append_pair("libraryName", &args.library_name)
+        .append_pair("query", &args.query);
+
+    let mut req = HttpRequest::new(&url).with_method("GET");
+    req.headers.insert(
+        "X-Context7-Source".to_string(),
+        "hyper-mcp/context7-plugin".to_string(),
+    );
+    req.headers.insert(
+        "X-Context7-Server-Version".to_string(),
+        env!("CARGO_PKG_VERSION").to_string(),
+    );
+    // TODO: Add authorization, gotten from keyring secret
+
+    match http::request::<()>(&req, None) {
+        Ok(res) => {
+            if res.status_code() >= 200 && res.status_code() < 300 {
+                match serde_json::from_str::<ResolveLibraryIdResponse>(&body_str) {
+                    Ok(context7_response) => {
+                        let mut call_tool_result = CallToolResult {
+                            content: vec![ContentBlock::Text(TextContent {
+                                text: body_str,
+
+                                ..Default::default()
+                            })],
+
+                            ..Default::default()
+                        };
+                        match serde_json::to_value(context7_response) {
+                            Ok(value) => match value {
+                                Value::Object(map) => {
+                                    call_tool_result.structured_content = Some(map);
+                                }
+                                _ => {}
+                            },
+                            Err(_) => {}
+                        }
+
+                        Ok(call_tool_result)
+                    }
+                    Err(e) => Ok(error_result(e.to_string())),
+                }
+            } else {
+                Ok(error_result(format!(
+                    "API request failed with status {}: {}",
+                    res.status_code(),
+                    String::from_utf8_lossy(&res.body()).to_string(),
+                )))
+            }
+        }
+        Err(e) => Ok(error_result(e.to_string())),
+    }
 }
