@@ -9,25 +9,6 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          fetch-depth: 0
-          submodules: true
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache dependencies
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
-
-      - name: Run tests
-        run: cargo test --test resolve_library_id_tests
-
   prepare-nightly-release:
     name: Prepare nightly tag + delete prior release
     runs-on: ubuntu-latest
@@ -54,7 +35,7 @@ jobs:
 
   build-wasm:
     name: Build plugin.wasm
-    needs: [test, prepare-nightly-release]
+    needs: prepare-nightly-release
     runs-on: ubuntu-24.04
     permissions:
       contents: read

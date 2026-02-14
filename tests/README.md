@@ -131,10 +131,8 @@ enum DocumentState {
 
 ## Continuous Integration
 
-The tests are automatically run in the following GitHub Actions workflows:
+The tests are automatically run in the following GitHub Actions workflow:
 
 - **CI Workflow** (`ci.yml`) - Runs on every push to `main` and on pull requests
-- **Release Workflow** (`release.yml`) - Runs before building release artifacts
-- **Nightly Workflow** (`nightly.yml`) - Runs before building nightly releases
 
-All workflows run the test job before the build job, ensuring that tests must pass before any artifacts are created. This helps catch deserialization issues early and ensures the plugin works with the actual Context7 API.
+The CI workflow runs the test job before the build job, ensuring that tests must pass before the build completes. This helps catch deserialization issues early and ensures the plugin works with the actual Context7 API.

@@ -186,12 +186,10 @@ See [tests/README.md](tests/README.md) for detailed test documentation.
 
 ### Continuous Integration
 
-All tests run automatically in CI/CD pipelines:
-- **CI Workflow** - On every push and pull request
-- **Release Workflow** - Before creating releases
-- **Nightly Workflow** - Before nightly builds
+Tests run automatically in the CI workflow:
+- **CI Workflow** - On every push to `main` and on pull requests
 
-Tests must pass before any artifacts are built or published.
+Tests must pass before the build job completes. This helps catch deserialization issues early and ensures the plugin works with the actual Context7 API.
 
 ### Code Quality
 
