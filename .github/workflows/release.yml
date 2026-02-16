@@ -32,10 +32,10 @@ jobs:
           echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
-      - name: Install Rust 1.92 toolchain + wasm target
+      - name: Install Rust toolchain + wasm target
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.92"
+          toolchain: "1.93.1"
           components: rustc rust-std cargo clippy rustfmt
           targets: wasm32-wasip1
 
@@ -55,8 +55,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo fetch
-          cargo auditable build --release --target wasm32-wasip1
+          cargo +1.93.1 fetch
+          cargo +1.93.1 auditable build --release --target wasm32-wasip1
           cp target/wasm32-wasip1/release/plugin.wasm ./plugin.wasm
 
       - name: Ensure plugin.wasm exists
