@@ -206,7 +206,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    needs: publish-oras
+    needs: [publish-oras, sbom]
     runs-on: ubuntu-latest
     permissions:
       contents: write
