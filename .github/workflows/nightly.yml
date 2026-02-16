@@ -89,7 +89,7 @@ jobs:
           echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
 
       - name: Upload wasm artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: plugin-wasm
           path: plugin.wasm
@@ -199,7 +199,7 @@ jobs:
           ' temp.json > sbom.cdx.json
 
       - name: Upload sbom artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: sbom-cdx-json
           path: sbom.cdx.json
@@ -213,13 +213,13 @@ jobs:
       contents: write
     steps:
       - name: Download wasm artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7.0.0
         with:
           name: plugin-wasm
           path: .
 
       - name: Download sbom artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7.0.0
         with:
           name: sbom-cdx-json
           path: .
