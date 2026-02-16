@@ -5,10 +5,61 @@ use extism_pdk::*;
 use pdk::types::*;
 use schemars::{JsonSchema, schema_for};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
+use std::sync::OnceLock;
 use url::Url;
 
-const CONTEXT7_API_BASE_URL: &str = "https://context7.com/api"; // Guessed API base URL
+use crate::pdk::imports::{get_keyring_secret, notify_logging_message};
+
+const CONTEXT7_API_BASE_URL: &str = "https://context7.com/api";
+static CONTEXT7_API_KEY: OnceLock<Option<String>> = OnceLock::new();
+
+fn resolve_context7_api_key() -> Option<String> {
+    let api_key = match config::get("CONTEXT7_API_KEY") {
+        Ok(Some(item)) => match serde_json::from_str::<KeyringEntryId>(item.as_str()) {
+            Ok(entry_id) => match get_keyring_secret(entry_id) {
+                Ok(secret_bytes) => match String::from_utf8(secret_bytes) {
+                    Ok(secret_str) => Some(secret_str),
+                    Err(e) => {
+                        notify_logging_message(LoggingMessageNotificationParam {
+                            data: json!(e.to_string()),
+                            level: LoggingLevel::Error,
+
+                            ..Default::default()
+                        })
+                        .ok();
+                        None
+                    }
+                },
+                Err(_) => None,
+            },
+            Err(_) => Some(item),
+        },
+        Ok(None) => None,
+        Err(e) => {
+            notify_logging_message(LoggingMessageNotificationParam {
+                data: json!(e.to_string()),
+                level: LoggingLevel::Error,
+
+                ..Default::default()
+            })
+            .ok();
+            None
+        }
+    };
+    if api_key.is_none() {
+        notify_logging_message(LoggingMessageNotificationParam {
+            data: json!(
+                "Unable to resolve api key for Context7, using anonymous access".to_string()
+            ),
+            level: LoggingLevel::Info,
+
+            ..Default::default()
+        })
+        .ok();
+    }
+    api_key
+}
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 struct ResolveLibraryIdArguments {
@@ -167,11 +218,31 @@ pub(crate) fn list_tools(_input: ListToolsRequest) -> Result<ListToolsResult> {
                 input_schema: schema_for!(ResolveLibraryIdArguments),
                 output_schema: Some(schema_for!(ResolveLibraryIdResponse)),
                 title: Some("Resolve Context7 Library ID".to_string()),
-
-                ..Default::default()
             }
         ],
     })
+}
+
+trait Context7Headers: Sized {
+    fn insert_context7_headers(self) -> Self;
+}
+
+impl Context7Headers for HttpRequest {
+    fn insert_context7_headers(mut self) -> Self {
+        self.headers.insert(
+            "X-Context7-Source".to_string(),
+            "hyper-mcp/context7-plugin".to_string(),
+        );
+        self.headers.insert(
+            "X-Context7-Server-Version".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
+        if let Some(api_key) = CONTEXT7_API_KEY.get_or_init(resolve_context7_api_key) {
+            self.headers
+                .insert("Authorization".to_string(), format!("Bearer {api_key}"));
+        }
+        self
+    }
 }
 
 fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
@@ -187,16 +258,9 @@ fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
         .append_pair("libraryId", &args.library_id)
         .append_pair("query", &args.query);
 
-    let mut req = HttpRequest::new(url.as_str()).with_method("GET");
-    req.headers.insert(
-        "X-Context7-Source".to_string(),
-        "hyper-mcp/context7-plugin".to_string(),
-    );
-    req.headers.insert(
-        "X-Context7-Server-Version".to_string(),
-        env!("CARGO_PKG_VERSION").to_string(),
-    );
-    // TODO: Add authorization, gotten from keyring secret
+    let req = HttpRequest::new(url.as_str())
+        .with_method("GET")
+        .insert_context7_headers();
 
     match http::request::<()>(&req, None) {
         Ok(res) => {
@@ -236,16 +300,9 @@ fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
         .append_pair("libraryName", &args.library_name)
         .append_pair("query", &args.query);
 
-    let mut req = HttpRequest::new(url.as_str()).with_method("GET");
-    req.headers.insert(
-        "X-Context7-Source".to_string(),
-        "hyper-mcp/context7-plugin".to_string(),
-    );
-    req.headers.insert(
-        "X-Context7-Server-Version".to_string(),
-        env!("CARGO_PKG_VERSION").to_string(),
-    );
-    // TODO: Add authorization, gotten from keyring secret
+    let req = HttpRequest::new(url.as_str())
+        .with_method("GET")
+        .insert_context7_headers();
 
     match http::request::<()>(&req, None) {
         Ok(res) => {
@@ -262,14 +319,8 @@ fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
 
                             ..Default::default()
                         };
-                        match serde_json::to_value(context7_response) {
-                            Ok(value) => match value {
-                                Value::Object(map) => {
-                                    call_tool_result.structured_content = Some(map);
-                                }
-                                _ => {}
-                            },
-                            Err(_) => {}
+                        if let Ok(Value::Object(map)) = serde_json::to_value(context7_response) {
+                            call_tool_result.structured_content = Some(map);
                         }
 
                         Ok(call_tool_result)

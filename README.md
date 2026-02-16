@@ -4,36 +4,104 @@ This plugin provides tools to interact with the Context7 API, allowing you to re
 
 It is a drop-in replacement for the MCP server provided by Context7, with structured output when resolving library ids.
 
+## Configuration
+
+### API Key (Optional)
+
+The plugin supports authenticated access to the Context7 API using an API key. While the plugin works with anonymous access, using an API key may provide:
+- Higher rate limits
+- Access to premium features
+- Better performance
+
+#### Option 1: Using System Keyring (Recommended)
+
+For secure storage, store your API key in your system keyring and reference it in the configuration:
+
+```json
+{
+  "plugins": {
+    "context7": {
+      "url": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:latest",
+      "runtime_config": {
+        "allowed_hosts": ["context7.com"],
+        "allowed_secrets": [
+          {
+            "service": "your-service",
+            "user": "your-user"
+          }
+        ],
+        "env_vars": {
+          "CONTEXT7_API_KEY": "{\"service\":\"your-service\",\"user\":\"your-user\"}"
+        }
+      }
+    }
+  }
+}
+```
+
+Then store your API key in the system keyring with service name `your-service` and user `your-user`. Note that:
+- The keyring reference is passed as a JSON string in `env_vars.CONTEXT7_API_KEY`
+- The same keyring entry must be listed in `allowed_secrets` array
+- The JSON string needs escaped quotes: `"{\"service\":\"your-service\",\"user\":\"your-user\"}"`
+- The secret stored should be the plain-text API key (no JSON formatting)
+
+#### Option 2: Plain Text (Not Recommended)
+
+Alternatively, you can provide the API key directly in the configuration (less secure):
+
+```json
+{
+  "plugins": {
+    "context7": {
+      "url": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:latest",
+      "runtime_config": {
+        "allowed_hosts": ["context7.com"],
+        "env_vars": {
+          "CONTEXT7_API_KEY": "your-api-key-here"
+        }
+      }
+    }
+  }
+}
+```
+
+⚠️ **Warning:** Storing API keys in plain text is not recommended for production use.
+
+#### Anonymous Access
+
+If no API key is configured, the plugin will use anonymous access. You'll see an info-level log message:
+```
+Unable to resolve api key for Context7, using anonymous access
+```
+
 ## Usage
 
 Add the plugin to your Hyper MCP configuration:
 
 ```json
 {
-  "plugins": [
-    {
-      "name": "context7",
-      "path": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:latest",
+  "plugins": {
+    "context7": {
+      "url": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:latest",
       "runtime_config": {
         "allowed_hosts": ["context7.com"]
       }
     }
-  ]
+  }
 }
 ```
 
 For nightly builds:
 ```json
 {
-  "plugins": [
-    {
-      "name": "context7",
-      "path": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:nightly",
+  "plugins": {
+    "context7": {
+      "url": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:nightly",
       "runtime_config": {
         "allowed_hosts": ["context7.com"]
       }
     }
-  ]
+  }
 }
 ```
 
@@ -211,6 +279,7 @@ The plugin uses the Context7 API:
 ### Request Headers
 - `X-Context7-Source: hyper-mcp/context7-plugin`
 - `X-Context7-Server-Version: {version}`
+- `Authorization: Bearer {api_key}` (when API key is configured)
 
 ## Privacy & Security
 
