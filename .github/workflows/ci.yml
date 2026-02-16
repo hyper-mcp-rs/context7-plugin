@@ -69,3 +69,14 @@ jobs:
 
       - name: Build plugin
         run: cargo build --release --target wasm32-wasip1
+
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+
+      - name: Generate CycloneDX SBOM
+        run: cargo cyclonedx -f json -o sbom.cdx.json
