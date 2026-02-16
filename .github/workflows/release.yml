@@ -243,6 +243,7 @@ jobs:
 
           Release asset:
           - \`plugin.wasm\`
+          - \`sbom.cdx.json\`
 
           Pull with ORAS:
           \`\`\`bash
