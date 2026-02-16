@@ -79,4 +79,4 @@ jobs:
         run: cargo install cargo-cyclonedx --locked
 
       - name: Generate CycloneDX SBOM
-        run: cargo cyclonedx -f json -o sbom.cdx.json
+        run: cargo cyclonedx -f json
