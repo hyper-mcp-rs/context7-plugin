@@ -201,7 +201,7 @@ jobs:
       - name: Upload sbom artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sbom.cdx.json
+          name: sbom-cdx-json
           path: sbom.cdx.json
           if-no-files-found: error
 
@@ -212,9 +212,16 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Download artifacts
+      - name: Download wasm artifact
         uses: actions/download-artifact@v4
         with:
+          name: plugin-wasm
+          path: .
+
+      - name: Download sbom artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-cdx-json
           path: .
 
       - name: Create release notes
@@ -236,6 +243,7 @@ jobs:
 
           Release asset:
           - \`plugin.wasm\`
+          - \`sbom.cdx.json\`
 
           Pull with ORAS:
           \`\`\`bash
