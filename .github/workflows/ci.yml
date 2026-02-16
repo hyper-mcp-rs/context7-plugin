@@ -84,4 +84,12 @@ jobs:
         run: cargo install cargo-cyclonedx --locked
 
       - name: Generate CycloneDX SBOM
-        run: cargo cyclonedx -f json
+        run: cargo cyclonedx -f json --all-features --override-filename temp
+
+      - name: Clean SBOM
+        run: jq '
+          del(.metadata.component."bom-ref")
+          | del(.metadata.component.purl)
+          | del(.metadata.component.components[0]."bom-ref")
+          | del(.metadata.component.components[0].purl)
+          ' temp.json > sbom.cdx.json
