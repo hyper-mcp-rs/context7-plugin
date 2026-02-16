@@ -173,6 +173,37 @@ jobs:
           cosign sign --yes "${IMAGE}@${{ steps.digest.outputs.tag_digest }}"
           cosign sign --yes "${IMAGE}@${{ steps.digest.outputs.latest_digest }}"
 
+  sbom:
+    name: SBOM
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked
+
+      - name: Generate CycloneDX SBOM
+        run: cargo cyclonedx -f json --all-features --override-filename temp
+
+      - name: Clean SBOM
+        run: jq '
+          del(.metadata.component."bom-ref")
+          | del(.metadata.component.purl)
+          | del(.metadata.component.components[0]."bom-ref")
+          | del(.metadata.component.components[0].purl)
+          ' temp.json > sbom.cdx.json
+
+      - name: Upload sbom artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cdx-json
+          path: sbom.cdx.json
+          if-no-files-found: error
+
   publish-release:
     name: Publish GitHub Release
     needs: publish-oras
@@ -184,6 +215,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: plugin-wasm
+          path: .
+
+      - name: Download sbom artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-cdx-json
           path: .
 
       - name: Create release notes
@@ -234,3 +271,4 @@ jobs:
           body_path: release-body.md
           files: |
             plugin.wasm
+            sbom.cdx.json
