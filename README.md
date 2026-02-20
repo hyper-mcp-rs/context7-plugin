@@ -2,7 +2,7 @@
 
 This plugin provides tools to interact with the Context7 API, allowing you to resolve library IDs and query up-to-date documentation for any programming library or framework.
 
-It is a drop-in replacement for the MCP server provided by Context7, with structured output when resolving library ids.
+It is a drop-in replacement for the MCP server provided by Context7, with structured output for both library resolution and documentation queries.
 
 ## Configuration
 
@@ -74,6 +74,61 @@ If no API key is configured, the plugin will use anonymous access. You'll see an
 Unable to resolve api key for Context7, using anonymous access
 ```
 
+### Response Caching (Optional)
+
+The plugin supports on-disk caching of API responses to reduce the number of calls made to the Context7 API. Caching is enabled by mounting a `/cache` directory via the `allowed_paths` runtime configuration.
+
+#### Enabling the Cache
+
+Add `/cache` to `allowed_paths` in your plugin configuration, mapping it to a directory on the host:
+
+```json
+{
+  "plugins": {
+    "context7": {
+      "url": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:latest",
+      "runtime_config": {
+        "allowed_hosts": ["context7.com"],
+        "allowed_paths": ["/path/on/host/context7-cache:/cache"]
+      }
+    }
+  }
+}
+```
+
+If the `/cache` directory is not mounted, the plugin will log an info-level message and operate without caching:
+```
+Cache directory /cache is not mounted; caching is disabled
+```
+
+#### Cache TTL
+
+By default, cached responses expire after **1 day**. You can customize this with the `CACHE_TTL` configuration variable:
+
+```json
+{
+  "plugins": {
+    "context7": {
+      "url": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:latest",
+      "runtime_config": {
+        "allowed_hosts": ["context7.com"],
+        "allowed_paths": ["/path/on/host/context7-cache:/cache"],
+        "env_vars": {
+          "CACHE_TTL": "7"
+        }
+      }
+    }
+  }
+}
+```
+
+#### How it Works
+
+- Cache entries are stored as JSON files in `/cache`, keyed by a hash of the tool arguments.
+- Staleness is determined by the file's last-modified time compared to the configured TTL.
+- Only successful responses are cached; errors are never cached.
+- The `clear_cache` tool can be used to manually invalidate all cached entries.
+
 ## Usage
 
 Add the plugin to your Hyper MCP configuration:
@@ -99,6 +154,34 @@ For nightly builds:
       "url": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:nightly",
       "runtime_config": {
         "allowed_hosts": ["context7.com"]
+      }
+    }
+  }
+}
+```
+
+### Full Configuration Example
+
+A complete configuration with API key (via keyring), caching, and custom TTL:
+
+```json
+{
+  "plugins": {
+    "context7": {
+      "url": "oci://ghcr.io/hyper-mcp-rs/context7-plugin:latest",
+      "runtime_config": {
+        "allowed_hosts": ["context7.com"],
+        "allowed_paths": ["/path/on/host/context7-cache:/cache"],
+        "allowed_secrets": [
+          {
+            "service": "context7",
+            "user": "api-key"
+          }
+        ],
+        "env_vars": {
+          "CONTEXT7_API_KEY": "{\"service\":\"context7\",\"user\":\"api-key\"}",
+          "CACHE_TTL": "3"
+        }
       }
     }
   }
@@ -160,6 +243,9 @@ Returns a structured response with matching libraries including:
 - `trustScore`: Trust score 0-10 (optional)
 - `benchmarkScore`: Quality benchmark 0-100 (optional)
 - `versions`: Available versions (optional)
+- `score`: Search relevance score (optional)
+- `vip`: VIP library flag (optional)
+- `verified`: Verified library flag (optional)
 
 **Example Output:**
 ```json
@@ -177,7 +263,10 @@ Returns a structured response with matching libraries including:
       "stars": -1,
       "trustScore": 10,
       "benchmarkScore": 89.2,
-      "versions": []
+      "versions": [],
+      "score": 0.8,
+      "vip": true,
+      "verified": true
     }
   ]
 }
@@ -188,6 +277,12 @@ Returns a structured response with matching libraries including:
 **Description:** Retrieves and queries up-to-date documentation and code examples from Context7 for any programming library or framework.
 
 You must call `resolve_library_id` first to obtain the exact Context7-compatible library ID required to use this tool, UNLESS the user explicitly provides a library ID in the format `/org/project` or `/org/project/version` in their query.
+
+This tool makes two parallel requests to the Context7 API:
+- A **text** request (`type=txt`) for human-readable Markdown documentation
+- A **JSON** request (`type=json`) for structured code snippets and documentation metadata
+
+The Markdown is returned as the text content, and the structured JSON is returned as `structuredContent`.
 
 **IMPORTANT:** Do not call this tool more than 3 times per question. If you cannot find what you need after 3 calls, use the best information you have.
 
@@ -207,8 +302,81 @@ You must call `resolve_library_id` first to obtain the exact Context7-compatible
 }
 ```
 
-**Output:**
-Returns documentation and code examples relevant to your query in text format.
+**Text Output:**
+Returns Markdown-formatted documentation and code examples relevant to your query.
+
+**Structured Output:**
+Returns a JSON object with the following structure:
+
+- `codeSnippets`: Array of relevant code snippets, each containing:
+  - `codeTitle`: Title of the code snippet
+  - `codeDescription`: Description of what the code does
+  - `codeLanguage`: Primary programming language
+  - `codeTokens`: Token count for the snippet
+  - `codeId`: URL to source location
+  - `pageTitle`: Title of the documentation page
+  - `codeList`: Array of code examples, each with `language` and `code`
+- `infoSnippets`: Array of documentation snippets, each containing:
+  - `pageId`: URL to source page
+  - `breadcrumb`: Navigation breadcrumb path
+  - `content`: The documentation content
+  - `contentTokens`: Token count for the content
+- `rules` (optional): Library-specific rules and guidelines
+  - `global`: Global team rules
+  - `libraryOwn`: Rules defined by the library owner
+  - `libraryTeam`: Library-specific rules from the team
+
+**Example Structured Output:**
+```json
+{
+  "codeSnippets": [
+    {
+      "codeTitle": "Middleware Authentication Example",
+      "codeDescription": "Shows how to implement authentication checks in Next.js middleware",
+      "codeLanguage": "typescript",
+      "codeTokens": 150,
+      "codeId": "https://github.com/vercel/next.js/blob/canary/docs/middleware.mdx#_snippet_0",
+      "pageTitle": "Middleware",
+      "codeList": [
+        {
+          "language": "typescript",
+          "code": "import { NextResponse } from 'next/server'\nimport type { NextRequest } from 'next/server'\n\nexport function middleware(request: NextRequest) {\n  const token = request.cookies.get('token')\n  if (!token) {\n    return NextResponse.redirect(new URL('/login', request.url))\n  }\n  return NextResponse.next()\n}"
+        }
+      ]
+    }
+  ],
+  "infoSnippets": [
+    {
+      "pageId": "https://github.com/vercel/next.js/blob/canary/docs/middleware.mdx",
+      "breadcrumb": "Routing > Middleware",
+      "content": "Middleware allows you to run code before a request is completed...",
+      "contentTokens": 200
+    }
+  ]
+}
+```
+
+### 3. `clear_cache`
+
+**Description:** Clears the on-disk cache of Context7 API responses. Use this if you suspect cached results are stale or incorrect.
+
+This tool takes no arguments.
+
+**Behavior:**
+- If caching is enabled, removes all `.json` cache files from the `/cache` directory
+- If caching is not enabled (directory not mounted), returns an informational message
+- Non-JSON files in the cache directory are left untouched
+- Returns a success message with the count of removed entries, or an error if files could not be removed
+
+**Example Output (success):**
+```
+Cache cleared successfully (5 entries removed)
+```
+
+**Example Output (cache not mounted):**
+```
+Cache is not enabled (directory not mounted)
+```
 
 ## Development
 
@@ -223,32 +391,58 @@ The compiled plugin will be available at `target/wasm32-wasip1/release/plugin.wa
 
 ### Testing
 
-The plugin includes comprehensive integration tests that make real API calls to Context7:
+The plugin includes comprehensive tests split across two test files:
 
 ```bash
-# Run tests (requires native target, not WASM)
+# Run all tests (requires native target, not WASM)
+cargo test --target $(rustc -vV | grep host | cut -d' ' -f2)
+```
+
+Or run individual test suites:
+
+```bash
+# API integration tests (makes real HTTP calls to Context7)
 cargo test --test resolve_library_id_tests --target $(rustc -vV | grep host | cut -d' ' -f2)
+
+# Cache functionality tests (local, no network required)
+cargo test --test cache_tests --target $(rustc -vV | grep host | cut -d' ' -f2)
 ```
 
 Or specify your target explicitly:
 ```bash
 # macOS ARM
-cargo test --test resolve_library_id_tests --target aarch64-apple-darwin
+cargo test --target aarch64-apple-darwin
 
 # macOS Intel
-cargo test --test resolve_library_id_tests --target x86_64-apple-darwin
+cargo test --target x86_64-apple-darwin
 
 # Linux
-cargo test --test resolve_library_id_tests --target x86_64-unknown-linux-gnu
+cargo test --target x86_64-unknown-linux-gnu
 ```
+
+#### API Integration Tests (`resolve_library_id_tests`)
 
 Tests verify:
 - ✅ Response deserialization with actual Context7 API calls
 - ✅ Handling of popular libraries (React, Next.js, MongoDB)
 - ✅ Empty/no results scenarios
-- ✅ Optional field handling
+- ✅ Optional field handling (including `score`, `vip`, `verified`)
 - ✅ All DocumentState enum variants
 - ✅ Error responses
+
+#### Cache Tests (`cache_tests`)
+
+Tests verify:
+- ✅ Hash determinism (same args → same hash, different args → different hash)
+- ✅ Cache path generation format (`{tool_name}_{hex_hash}.json`)
+- ✅ `CallToolResult` serialization round-trip (text, structured, error, nested content)
+- ✅ Cache put/get operations (hit, miss, overwrite)
+- ✅ Cache miss for different args, different tool names, empty directories
+- ✅ TTL / staleness detection (fresh entries returned, stale entries rejected)
+- ✅ Zero TTL always treats entries as stale
+- ✅ Cache clear (removes `.json` files, leaves non-JSON files)
+- ✅ Clear-then-put (cache is reusable after clearing)
+- ✅ Corrupted / malformed / empty / wrong-shape cache files handled gracefully
 
 See [tests/README.md](tests/README.md) for detailed test documentation.
 
@@ -274,7 +468,8 @@ cargo clippy -- -D warnings
 The plugin uses the Context7 API:
 - **Base URL:** `https://context7.com/api`
 - **Library Search:** `GET /v2/libs/search?libraryName={name}&query={query}`
-- **Query Docs:** `GET /v2/context?libraryId={id}&query={query}`
+- **Query Docs (text):** `GET /v2/context?libraryId={id}&query={query}&type=txt`
+- **Query Docs (JSON):** `GET /v2/context?libraryId={id}&query={query}&type=json`
 
 ### Request Headers
 - `X-Context7-Source: hyper-mcp/context7-plugin`
