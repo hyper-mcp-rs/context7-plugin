@@ -1,9 +1,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::hash::Hash;
 
 // --- resolve_library_id request/response types ---
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Default, Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct ResolveLibraryIdArguments {
     #[schemars(
         description = "Library name to search for and retrieve a Context7-compatible library ID."
@@ -128,7 +129,11 @@ pub(crate) struct QueryDocsResponse {
     pub rules: Option<Rules>,
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[allow(dead_code)]
+#[derive(Default, Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct ClearCacheArguments {}
+
+#[derive(Default, Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct QueryDocsArguments {
     #[schemars(
         description = "Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js', '/supabase/supabase', \
