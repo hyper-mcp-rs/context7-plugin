@@ -1,15 +1,17 @@
 mod pdk;
+mod types;
 
+use crate::{
+    pdk::imports::{get_keyring_secret, notify_logging_message},
+    types::*,
+};
 use anyhow::Result;
 use extism_pdk::*;
 use pdk::types::*;
-use schemars::{JsonSchema, schema_for};
-use serde::{Deserialize, Serialize};
+use schemars::schema_for;
 use serde_json::{Value, json};
 use std::sync::OnceLock;
 use url::Url;
-
-use crate::pdk::imports::{get_keyring_secret, notify_logging_message};
 
 const CONTEXT7_API_BASE_URL: &str = "https://context7.com/api";
 static CONTEXT7_API_KEY: OnceLock<Option<String>> = OnceLock::new();
@@ -59,148 +61,6 @@ fn resolve_context7_api_key() -> Option<String> {
         .ok();
     }
     api_key
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct ResolveLibraryIdArguments {
-    #[schemars(
-        description = "Library name to search for and retrieve a Context7-compatible library ID."
-    )]
-    #[serde(rename = "libraryName")]
-    library_name: String,
-
-    #[schemars(
-        description = "The question or task you need help with. This is used to rank library results \
-        by relevance to what the user is trying to accomplish. The query is sent to the Context7 API for processing. \
-        Do not include any sensitive or confidential information such as API keys, passwords, credentials, personal data, \
-        or proprietary code in your query."
-    )]
-    query: String,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-enum DocumentState {
-    Delete,
-    Error,
-    Finalized,
-    #[default]
-    Initial,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct Library {
-    id: String,
-    title: String,
-    description: String,
-    branch: String,
-    #[serde(rename = "lastUpdateDate")]
-    last_update_date: String,
-    state: DocumentState,
-    #[serde(rename = "totalTokens")]
-    total_tokens: f64,
-    #[serde(rename = "totalSnippets")]
-    total_snippets: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stars: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "trustScore")]
-    trust_score: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "benchmarkScore")]
-    benchmark_score: Option<f64>,
-    #[serde(default)]
-    versions: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    score: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    vip: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    verified: Option<bool>,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct ResolveLibraryIdResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-    results: Vec<Library>,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct CodeListEntry {
-    language: String,
-    code: String,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct CodeSnippet {
-    #[serde(rename = "codeTitle")]
-    code_title: String,
-    #[serde(rename = "codeDescription")]
-    code_description: String,
-    #[serde(rename = "codeLanguage")]
-    code_language: String,
-    #[serde(rename = "codeTokens")]
-    code_tokens: f64,
-    #[serde(rename = "codeId")]
-    code_id: String,
-    #[serde(rename = "pageTitle")]
-    page_title: String,
-    #[serde(rename = "codeList")]
-    code_list: Vec<CodeListEntry>,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct InfoSnippet {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "pageId")]
-    page_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    breadcrumb: Option<String>,
-    content: String,
-    #[serde(rename = "contentTokens")]
-    content_tokens: f64,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct Rules {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    global: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "libraryOwn")]
-    library_own: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    #[serde(rename = "libraryTeam")]
-    library_team: Vec<String>,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct QueryDocsResponse {
-    #[serde(rename = "codeSnippets")]
-    code_snippets: Vec<CodeSnippet>,
-    #[serde(rename = "infoSnippets")]
-    info_snippets: Vec<InfoSnippet>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    rules: Option<Rules>,
-}
-
-#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
-struct QueryDocsArguments {
-    #[schemars(
-        description = "Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js', '/supabase/supabase', \
-        '/vercel/next.js/v14.3.0-canary.87') retrieved from 'resolve_library_id' or directly from user query in the format '/org/project' \
-        or '/org/project/version'."
-    )]
-    #[serde(rename = "libraryId")]
-    library_id: String,
-
-    #[schemars(
-        description = "The question or task you need help with. Be specific and include relevant details. \
-        Good: 'How to set up authentication with JWT in Express.js' or 'React useEffect cleanup function examples'. \
-        Bad: 'auth' or 'hooks'. The query is sent to the Context7 API for processing. Do not include any sensitive or \
-        confidential information such as API keys, passwords, credentials, personal data, or proprietary code in your query."
-    )]
-    query: String,
 }
 
 pub(crate) fn call_tool(input: CallToolRequest) -> Result<CallToolResult> {
