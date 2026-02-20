@@ -177,6 +177,10 @@ fn query_docs(input: CallToolRequest) -> CallToolResult {
             Err(e) => return CallToolResult::error(format!("Invalid arguments: {e}")),
         };
 
+    if let Some(cached) = cache::get("query_docs", &args) {
+        return cached;
+    }
+
     let base_url = match Url::parse(&format!("{}/v2/context", CONTEXT7_API_BASE_URL)) {
         Ok(url) => url,
         Err(e) => {
@@ -270,22 +274,27 @@ fn query_docs(input: CallToolRequest) -> CallToolResult {
                 result.structured_content = Some(map);
             }
 
+            cache::put("query_docs", &args, &result);
             result
         }
         Err(txt_err) => {
             // If text failed but JSON succeeded, return stringified JSON as text
             // content along with the structured
             match structured_content {
-                Ok(map) => CallToolResult {
-                    content: vec![ContentBlock::Text(TextContent {
-                        text: serde_json::to_string(&map).unwrap_or_default(),
+                Ok(map) => {
+                    let result = CallToolResult {
+                        content: vec![ContentBlock::Text(TextContent {
+                            text: serde_json::to_string(&map).unwrap_or_default(),
+
+                            ..Default::default()
+                        })],
+                        structured_content: Some(map),
 
                         ..Default::default()
-                    })],
-                    structured_content: Some(map),
-
-                    ..Default::default()
-                },
+                    };
+                    cache::put("query_docs", &args, &result);
+                    result
+                }
                 Err(json_err) => CallToolResult::error(format!(
                     "Text request failed: {}. JSON request failed: {}",
                     txt_err, json_err
@@ -301,6 +310,11 @@ fn resolve_library_id(input: CallToolRequest) -> CallToolResult {
             Ok(args) => args,
             Err(e) => return CallToolResult::error(format!("Invalid arguments: {e}")),
         };
+
+    if let Some(cached) = cache::get("resolve_library_id", &args) {
+        return cached;
+    }
+
     let mut url = match Url::parse(&format!("{}/v2/libs/search", CONTEXT7_API_BASE_URL)) {
         Ok(url) => url,
         Err(e) => {
@@ -334,6 +348,7 @@ fn resolve_library_id(input: CallToolRequest) -> CallToolResult {
                             call_tool_result.structured_content = Some(map);
                         }
 
+                        cache::put("resolve_library_id", &args, &call_tool_result);
                         call_tool_result
                     }
                     Err(e) => CallToolResult::error(e.to_string()),
