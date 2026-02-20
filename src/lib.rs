@@ -65,15 +65,12 @@ fn resolve_context7_api_key() -> Option<String> {
 }
 
 pub(crate) fn call_tool(input: CallToolRequest) -> Result<CallToolResult> {
-    match input.request.name.as_str() {
+    Ok(match input.request.name.as_str() {
         "resolve_library_id" => resolve_library_id(input),
         "query_docs" => query_docs(input),
-        "clear_cache" => Ok(cache::clear()),
-        _ => Ok(CallToolResult::error(format!(
-            "Unknown tool: {}",
-            input.request.name
-        ))),
-    }
+        "clear_cache" => cache::clear(),
+        _ => CallToolResult::error(format!("Unknown tool: {}", input.request.name)),
+    })
 }
 
 pub(crate) fn list_tools(_input: ListToolsRequest) -> Result<ListToolsResult> {
@@ -173,14 +170,17 @@ impl Context7Headers for HttpRequest {
     }
 }
 
-fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
+fn query_docs(input: CallToolRequest) -> CallToolResult {
     let args: QueryDocsArguments =
-        serde_json::from_value(Value::Object(input.request.arguments.unwrap_or_default()))?;
+        match serde_json::from_value(Value::Object(input.request.arguments.unwrap_or_default())) {
+            Ok(args) => args,
+            Err(e) => return CallToolResult::error(format!("Invalid arguments: {e}")),
+        };
 
     let base_url = match Url::parse(&format!("{}/v2/context", CONTEXT7_API_BASE_URL)) {
         Ok(url) => url,
         Err(e) => {
-            return Ok(CallToolResult::error(e.to_string()));
+            return CallToolResult::error(e.to_string());
         }
     };
 
@@ -270,13 +270,13 @@ fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
                 result.structured_content = Some(map);
             }
 
-            Ok(result)
+            result
         }
         Err(txt_err) => {
             // If text failed but JSON succeeded, return stringified JSON as text
             // content along with the structured
             match structured_content {
-                Ok(map) => Ok(CallToolResult {
+                Ok(map) => CallToolResult {
                     content: vec![ContentBlock::Text(TextContent {
                         text: serde_json::to_string(&map).unwrap_or_default(),
 
@@ -285,23 +285,26 @@ fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
                     structured_content: Some(map),
 
                     ..Default::default()
-                }),
-                Err(json_err) => Ok(CallToolResult::error(format!(
+                },
+                Err(json_err) => CallToolResult::error(format!(
                     "Text request failed: {}. JSON request failed: {}",
                     txt_err, json_err
-                ))),
+                )),
             }
         }
     }
 }
 
-fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
+fn resolve_library_id(input: CallToolRequest) -> CallToolResult {
     let args: ResolveLibraryIdArguments =
-        serde_json::from_value(Value::Object(input.request.arguments.unwrap_or_default()))?;
+        match serde_json::from_value(Value::Object(input.request.arguments.unwrap_or_default())) {
+            Ok(args) => args,
+            Err(e) => return CallToolResult::error(format!("Invalid arguments: {e}")),
+        };
     let mut url = match Url::parse(&format!("{}/v2/libs/search", CONTEXT7_API_BASE_URL)) {
         Ok(url) => url,
         Err(e) => {
-            return Ok(CallToolResult::error(e.to_string()));
+            return CallToolResult::error(e.to_string());
         }
     };
     url.query_pairs_mut()
@@ -331,19 +334,19 @@ fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
                             call_tool_result.structured_content = Some(map);
                         }
 
-                        Ok(call_tool_result)
+                        call_tool_result
                     }
-                    Err(e) => Ok(CallToolResult::error(e.to_string())),
+                    Err(e) => CallToolResult::error(e.to_string()),
                 }
             } else {
-                Ok(CallToolResult::error(format!(
+                CallToolResult::error(format!(
                     "API request failed with status {}: {}",
                     res.status_code(),
                     body_str,
-                )))
+                ))
             }
         }
-        Err(e) => Ok(CallToolResult::error(e.to_string())),
+        Err(e) => CallToolResult::error(e.to_string()),
     }
 }
 
