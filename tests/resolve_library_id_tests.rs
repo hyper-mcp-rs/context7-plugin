@@ -36,6 +36,12 @@ struct Library {
     benchmark_score: Option<f64>,
     #[serde(default)]
     versions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vip: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verified: Option<bool>,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -227,6 +233,15 @@ async fn test_resolve_library_id_response_nextjs() {
         if let Some(benchmark_score) = first_result.benchmark_score {
             println!("Benchmark score: {}", benchmark_score);
         }
+        if let Some(score) = first_result.score {
+            println!("Score: {}", score);
+        }
+        if let Some(vip) = first_result.vip {
+            println!("VIP: {}", vip);
+        }
+        if let Some(verified) = first_result.verified {
+            println!("Verified: {}", verified);
+        }
     }
 
     println!(
@@ -331,7 +346,10 @@ fn test_library_deserialization_complete() {
         "stars": 200000.0,
         "trustScore": 95.5,
         "benchmarkScore": 98.0,
-        "versions": ["v18.0.0", "v17.0.0"]
+        "versions": ["v18.0.0", "v17.0.0"],
+        "score": 0.85,
+        "vip": true,
+        "verified": true
     }"#;
 
     let library: Library =
@@ -345,6 +363,9 @@ fn test_library_deserialization_complete() {
     assert_eq!(library.trust_score, Some(95.5));
     assert_eq!(library.benchmark_score, Some(98.0));
     assert_eq!(library.versions.len(), 2);
+    assert_eq!(library.score, Some(0.85));
+    assert_eq!(library.vip, Some(true));
+    assert_eq!(library.verified, Some(true));
 
     println!("Successfully deserialized complete Library object");
 }
@@ -372,6 +393,9 @@ fn test_library_deserialization_minimal() {
     assert!(library.trust_score.is_none());
     assert!(library.benchmark_score.is_none());
     assert!(library.versions.is_empty());
+    assert!(library.score.is_none());
+    assert!(library.vip.is_none());
+    assert!(library.verified.is_none());
 
     println!("Successfully deserialized minimal Library object");
 }

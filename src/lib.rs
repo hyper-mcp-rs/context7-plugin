@@ -111,6 +111,12 @@ struct Library {
     benchmark_score: Option<f64>,
     #[serde(default)]
     versions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vip: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    verified: Option<bool>,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
