@@ -130,7 +130,7 @@ pub(crate) struct QueryDocsResponse {
 }
 
 #[allow(dead_code)]
-#[derive(Default, Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct ClearCacheArguments {}
 
 #[derive(Default, Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
