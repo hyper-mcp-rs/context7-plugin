@@ -139,23 +139,11 @@ struct QueryDocsArguments {
     query: String,
 }
 
-fn error_result(error: String) -> CallToolResult {
-    CallToolResult {
-        is_error: Some(true),
-        content: vec![ContentBlock::Text(TextContent {
-            text: error,
-            ..Default::default()
-        })],
-
-        ..Default::default()
-    }
-}
-
 pub(crate) fn call_tool(input: CallToolRequest) -> Result<CallToolResult> {
     match input.request.name.as_str() {
         "resolve_library_id" => resolve_library_id(input),
         "query_docs" => query_docs(input),
-        _ => Ok(error_result(format!(
+        _ => Ok(CallToolResult::error(format!(
             "Unknown tool: {}",
             input.request.name
         ))),
@@ -251,7 +239,7 @@ fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
     let mut url = match Url::parse(&format!("{}/v2/context", CONTEXT7_API_BASE_URL)) {
         Ok(url) => url,
         Err(e) => {
-            return Ok(error_result(e.to_string()));
+            return Ok(CallToolResult::error(e.to_string()));
         }
     };
     url.query_pairs_mut()
@@ -276,14 +264,14 @@ fn query_docs(input: CallToolRequest) -> Result<CallToolResult> {
                     ..Default::default()
                 })
             } else {
-                Ok(error_result(format!(
+                Ok(CallToolResult::error(format!(
                     "API request failed with status {}: {}",
                     res.status_code(),
                     body,
                 )))
             }
         }
-        Err(e) => Ok(error_result(e.to_string())),
+        Err(e) => Ok(CallToolResult::error(e.to_string())),
     }
 }
 
@@ -293,7 +281,7 @@ fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
     let mut url = match Url::parse(&format!("{}/v2/libs/search", CONTEXT7_API_BASE_URL)) {
         Ok(url) => url,
         Err(e) => {
-            return Ok(error_result(e.to_string()));
+            return Ok(CallToolResult::error(e.to_string()));
         }
     };
     url.query_pairs_mut()
@@ -325,17 +313,17 @@ fn resolve_library_id(input: CallToolRequest) -> Result<CallToolResult> {
 
                         Ok(call_tool_result)
                     }
-                    Err(e) => Ok(error_result(e.to_string())),
+                    Err(e) => Ok(CallToolResult::error(e.to_string())),
                 }
             } else {
-                Ok(error_result(format!(
+                Ok(CallToolResult::error(format!(
                     "API request failed with status {}: {}",
                     res.status_code(),
                     body_str,
                 )))
             }
         }
-        Err(e) => Ok(error_result(e.to_string())),
+        Err(e) => Ok(CallToolResult::error(e.to_string())),
     }
 }
 
