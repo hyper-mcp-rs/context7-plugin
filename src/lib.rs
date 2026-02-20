@@ -1,3 +1,4 @@
+mod cache;
 mod pdk;
 mod types;
 
@@ -67,6 +68,7 @@ pub(crate) fn call_tool(input: CallToolRequest) -> Result<CallToolResult> {
     match input.request.name.as_str() {
         "resolve_library_id" => resolve_library_id(input),
         "query_docs" => query_docs(input),
+        "clear_cache" => Ok(cache::clear()),
         _ => Ok(CallToolResult::error(format!(
             "Unknown tool: {}",
             input.request.name
@@ -129,7 +131,22 @@ pub(crate) fn list_tools(_input: ListToolsRequest) -> Result<ListToolsResult> {
                 input_schema: schema_for!(ResolveLibraryIdArguments),
                 output_schema: Some(schema_for!(ResolveLibraryIdResponse)),
                 title: Some("Resolve Context7 Library ID".to_string()),
-            }
+            },
+            Tool {
+                name: "clear_cache".to_string(),
+                annotations: Some(ToolAnnotations {
+                    destructive_hint: Some(true),
+                    read_only_hint: Some(false),
+
+                    ..Default::default()
+                }),
+                description: Some(
+                    "Clears the local documentation cache. Use this when cached results appear stale or outdated.".to_string(),
+                ),
+                input_schema: schema_for!(ClearCacheArguments),
+                output_schema: None,
+                title: Some("Clear Cache".to_string()),
+            },
         ],
     })
 }
