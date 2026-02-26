@@ -148,12 +148,12 @@ pub(crate) fn list_tools(_input: ListToolsRequest) -> Result<ListToolsResult> {
     })
 }
 
-trait Context7Headers: Sized {
-    fn insert_context7_headers(self) -> Self;
+trait Context7Headers {
+    fn insert_context7_headers(self, context7_api_key: Option<&str>) -> Self;
 }
 
 impl Context7Headers for HttpRequest {
-    fn insert_context7_headers(mut self) -> Self {
+    fn insert_context7_headers(mut self, context7_api_key: Option<&str>) -> Self {
         self.headers.insert(
             "X-Context7-Source".to_string(),
             "hyper-mcp/context7-plugin".to_string(),
@@ -162,7 +162,11 @@ impl Context7Headers for HttpRequest {
             "X-Context7-Server-Version".to_string(),
             env!("CARGO_PKG_VERSION").to_string(),
         );
-        if let Some(api_key) = CONTEXT7_API_KEY.get_or_init(resolve_context7_api_key) {
+        if let Some(api_key) = context7_api_key.map(Some).unwrap_or_else(|| {
+            CONTEXT7_API_KEY
+                .get_or_init(resolve_context7_api_key)
+                .as_deref()
+        }) {
             self.headers
                 .insert("Authorization".to_string(), format!("Bearer {api_key}"));
         }
@@ -197,13 +201,13 @@ fn query_docs(input: CallToolRequest) -> CallToolResult {
         .append_pair("query", &args.query);
 
     // Fetch text content if requested
-    let content: Vec<ContentBlock> = if matches!(args.r#type, Some(QueryDocsType::Text)) {
+    let content: Option<String> = if matches!(args.r#type, Some(QueryDocsType::Text)) {
         let mut txt_url = base_url.clone();
         txt_url.query_pairs_mut().append_pair("type", "txt");
 
         let txt_req = HttpRequest::new(txt_url.as_str())
             .with_method("GET")
-            .insert_context7_headers();
+            .insert_context7_headers(args.context7_api_key.as_deref());
 
         let res = match http::request::<()>(&txt_req, None) {
             Ok(res) => res,
@@ -219,12 +223,9 @@ fn query_docs(input: CallToolRequest) -> CallToolResult {
             ));
         }
 
-        vec![ContentBlock::Text(TextContent {
-            text: body,
-            ..Default::default()
-        })]
+        Some(body)
     } else {
-        vec![]
+        None
     };
 
     // Fetch JSON content if requested (also the default when type is omitted)
@@ -235,7 +236,7 @@ fn query_docs(input: CallToolRequest) -> CallToolResult {
 
             let json_req = HttpRequest::new(json_url.as_str())
                 .with_method("GET")
-                .insert_context7_headers();
+                .insert_context7_headers(args.context7_api_key.as_deref());
 
             let res = match http::request::<()>(&json_req, None) {
                 Ok(res) => res,
@@ -274,7 +275,15 @@ fn query_docs(input: CallToolRequest) -> CallToolResult {
         };
 
     let result = CallToolResult {
-        content,
+        content: vec![ContentBlock::Text(TextContent {
+            text: content.unwrap_or_else(|| {
+                structured_content
+                    .as_ref()
+                    .and_then(|sc| serde_json::to_string(sc).ok())
+                    .unwrap_or_default()
+            }),
+            ..Default::default()
+        })],
         structured_content,
         ..Default::default()
     };
@@ -306,7 +315,7 @@ fn resolve_library_id(input: CallToolRequest) -> CallToolResult {
 
     let req = HttpRequest::new(url.as_str())
         .with_method("GET")
-        .insert_context7_headers();
+        .insert_context7_headers(args.context7_api_key.as_deref());
 
     match http::request::<()>(&req, None) {
         Ok(res) => {

@@ -144,6 +144,10 @@ struct ResolveLibraryIdArguments {
     #[serde(rename = "libraryName")]
     pub library_name: String,
     pub query: String,
+    #[serde(rename = "context7ApiKey")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub context7_api_key: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, Hash, Serialize, Deserialize)]
@@ -151,6 +155,10 @@ struct QueryDocsArguments {
     #[serde(rename = "libraryId")]
     pub library_id: String,
     pub query: String,
+    #[serde(rename = "context7ApiKey")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub context7_api_key: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -260,10 +268,12 @@ fn test_hash_determinism_same_args() {
     let args1 = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "server-side rendering".to_string(),
+        context7_api_key: None,
     };
     let args2 = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "server-side rendering".to_string(),
+        context7_api_key: None,
     };
     assert_eq!(
         compute_hash(&args1),
@@ -277,10 +287,12 @@ fn test_hash_determinism_different_query() {
     let args1 = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "server-side rendering".to_string(),
+        context7_api_key: None,
     };
     let args2 = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "client-side rendering".to_string(),
+        context7_api_key: None,
     };
     assert_ne!(
         compute_hash(&args1),
@@ -294,10 +306,12 @@ fn test_hash_determinism_different_library() {
     let args1 = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "routing".to_string(),
+        context7_api_key: None,
     };
     let args2 = QueryDocsArguments {
         library_id: "/facebook/react".to_string(),
         query: "routing".to_string(),
+        context7_api_key: None,
     };
     assert_ne!(
         compute_hash(&args1),
@@ -311,10 +325,12 @@ fn test_hash_determinism_resolve_library_id_args() {
     let args1 = ResolveLibraryIdArguments {
         library_name: "react".to_string(),
         query: "hooks".to_string(),
+        context7_api_key: None,
     };
     let args2 = ResolveLibraryIdArguments {
         library_name: "react".to_string(),
         query: "hooks".to_string(),
+        context7_api_key: None,
     };
     assert_eq!(compute_hash(&args1), compute_hash(&args2));
 }
@@ -326,10 +342,12 @@ fn test_hash_different_arg_types_differ() {
     let query_args = QueryDocsArguments {
         library_id: "react".to_string(),
         query: "hooks".to_string(),
+        context7_api_key: None,
     };
     let resolve_args = ResolveLibraryIdArguments {
         library_name: "react".to_string(),
         query: "hooks".to_string(),
+        context7_api_key: None,
     };
     // We can't guarantee they differ (Hash is not cryptographic), but
     // the tool_name prefix in cache_path will disambiguate regardless.
@@ -348,6 +366,7 @@ fn test_cache_path_format() {
     let args = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "middleware".to_string(),
+        context7_api_key: None,
     };
     let path = cache_path(Path::new("/cache"), "query_docs", &args);
     let filename = path.file_name().unwrap().to_str().unwrap();
@@ -377,6 +396,7 @@ fn test_cache_path_uses_tool_name_prefix() {
     let args = ResolveLibraryIdArguments {
         library_name: "react".to_string(),
         query: "hooks".to_string(),
+        context7_api_key: None,
     };
     let path = cache_path(Path::new("/tmp/test_cache"), "resolve_library_id", &args);
     assert!(
@@ -460,6 +480,7 @@ fn test_cache_put_then_get() {
     let args = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "middleware".to_string(),
+        context7_api_key: None,
     };
     let result = make_text_result("cached documentation");
     let ttl = Duration::from_secs(3600);
@@ -477,6 +498,7 @@ fn test_cache_put_then_get_with_structured_content() {
     let args = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "middleware".to_string(),
+        context7_api_key: None,
     };
     let result = make_structured_result("markdown text", "key", "value");
     let ttl = Duration::from_secs(3600);
@@ -493,6 +515,7 @@ fn test_cache_miss_on_empty_directory() {
     let args = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "middleware".to_string(),
+        context7_api_key: None,
     };
     let ttl = Duration::from_secs(3600);
 
@@ -506,10 +529,12 @@ fn test_cache_miss_on_different_args() {
     let args1 = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "middleware".to_string(),
+        context7_api_key: None,
     };
     let args2 = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "routing".to_string(),
+        context7_api_key: None,
     };
     let result = make_text_result("cached for middleware");
     let ttl = Duration::from_secs(3600);
@@ -529,6 +554,7 @@ fn test_cache_miss_on_different_tool_name() {
     let args = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "middleware".to_string(),
+        context7_api_key: None,
     };
     let result = make_text_result("cached content");
     let ttl = Duration::from_secs(3600);
@@ -548,6 +574,7 @@ fn test_cache_put_overwrites_existing() {
     let args = QueryDocsArguments {
         library_id: "/vercel/next.js".to_string(),
         query: "middleware".to_string(),
+        context7_api_key: None,
     };
     let ttl = Duration::from_secs(3600);
 
@@ -567,6 +594,7 @@ fn test_cache_resolve_library_id() {
     let args = ResolveLibraryIdArguments {
         library_name: "react".to_string(),
         query: "hooks".to_string(),
+        context7_api_key: None,
     };
     let result = make_structured_result(r#"{"results":[]}"#, "results", "[]");
     let ttl = Duration::from_secs(3600);
@@ -586,6 +614,7 @@ fn test_cache_fresh_entry_is_returned() {
     let args = QueryDocsArguments {
         library_id: "/test/lib".to_string(),
         query: "test".to_string(),
+        context7_api_key: None,
     };
     let result = make_text_result("fresh content");
     let ttl = Duration::from_secs(3600); // 1 hour
@@ -605,6 +634,7 @@ fn test_cache_stale_entry_is_not_returned() {
     let args = QueryDocsArguments {
         library_id: "/test/lib".to_string(),
         query: "test".to_string(),
+        context7_api_key: None,
     };
     let result = make_text_result("will become stale");
     // Use a very short TTL
@@ -625,6 +655,7 @@ fn test_cache_zero_ttl_always_stale() {
     let args = QueryDocsArguments {
         library_id: "/test/lib".to_string(),
         query: "test".to_string(),
+        context7_api_key: None,
     };
     let result = make_text_result("zero ttl content");
     let ttl = Duration::ZERO;
@@ -697,10 +728,12 @@ fn test_clear_removes_json_files() {
     let args1 = QueryDocsArguments {
         library_id: "/lib/one".to_string(),
         query: "query one".to_string(),
+        context7_api_key: None,
     };
     let args2 = QueryDocsArguments {
         library_id: "/lib/two".to_string(),
         query: "query two".to_string(),
+        context7_api_key: None,
     };
 
     cache_put(dir.path(), "query_docs", &args1, &make_text_result("one"));
@@ -729,6 +762,7 @@ fn test_clear_leaves_non_json_files() {
     let args = QueryDocsArguments {
         library_id: "/lib/test".to_string(),
         query: "test".to_string(),
+        context7_api_key: None,
     };
     cache_put(dir.path(), "query_docs", &args, &make_text_result("cached"));
 
@@ -748,6 +782,7 @@ fn test_clear_then_put_works() {
     let args = QueryDocsArguments {
         library_id: "/lib/test".to_string(),
         query: "test".to_string(),
+        context7_api_key: None,
     };
     let ttl = Duration::from_secs(3600);
 
@@ -785,10 +820,12 @@ fn test_clear_removes_all_tool_entries() {
     let query_args = QueryDocsArguments {
         library_id: "/lib/test".to_string(),
         query: "test".to_string(),
+        context7_api_key: None,
     };
     let resolve_args = ResolveLibraryIdArguments {
         library_name: "react".to_string(),
         query: "hooks".to_string(),
+        context7_api_key: None,
     };
 
     cache_put(
@@ -817,6 +854,7 @@ fn test_cache_file_is_valid_json() {
     let args = QueryDocsArguments {
         library_id: "/test/lib".to_string(),
         query: "check json".to_string(),
+        context7_api_key: None,
     };
     let result = make_structured_result("text content", "key", "value");
 
@@ -839,6 +877,7 @@ fn test_cache_file_contains_expected_fields() {
     let args = QueryDocsArguments {
         library_id: "/test/lib".to_string(),
         query: "fields check".to_string(),
+        context7_api_key: None,
     };
     let result = make_structured_result("hello", "myKey", "myValue");
 
@@ -873,6 +912,7 @@ fn test_cache_get_returns_none_for_corrupted_file() {
     let args = QueryDocsArguments {
         library_id: "/test/lib".to_string(),
         query: "corrupted".to_string(),
+        context7_api_key: None,
     };
     let ttl = Duration::from_secs(3600);
 
@@ -893,6 +933,7 @@ fn test_cache_get_returns_none_for_empty_file() {
     let args = QueryDocsArguments {
         library_id: "/test/lib".to_string(),
         query: "empty".to_string(),
+        context7_api_key: None,
     };
     let ttl = Duration::from_secs(3600);
 
@@ -909,6 +950,7 @@ fn test_cache_get_returns_none_for_wrong_json_shape() {
     let args = QueryDocsArguments {
         library_id: "/test/lib".to_string(),
         query: "wrong shape".to_string(),
+        context7_api_key: None,
     };
     let ttl = Duration::from_secs(3600);
 

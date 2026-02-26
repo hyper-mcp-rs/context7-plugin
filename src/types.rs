@@ -19,6 +19,12 @@ pub(crate) struct ResolveLibraryIdArguments {
         or proprietary code in your query."
     )]
     pub query: String,
+
+    #[schemars(description = "Optional Context7 API key to use for authenticated access.")]
+    #[serde(rename = "context7ApiKey")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub context7_api_key: Option<String>,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -168,4 +174,10 @@ pub(crate) struct QueryDocsArguments {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub r#type: Option<QueryDocsType>,
+
+    #[schemars(description = "Optional Context7 API key to use for authenticated access.")]
+    #[serde(rename = "context7ApiKey")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub context7_api_key: Option<String>,
 }

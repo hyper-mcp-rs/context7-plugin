@@ -13,6 +13,14 @@ The plugin supports authenticated access to the Context7 API using an API key. W
 - Access to premium features
 - Better performance
 
+There are three ways to provide an API key, listed in order of precedence:
+
+1. **Per-request** – Pass `context7ApiKey` as a tool argument (highest priority)
+2. **System Keyring** – Reference a keyring entry in `CONTEXT7_API_KEY` (recommended for server-wide keys)
+3. **Plain text config** – Set `CONTEXT7_API_KEY` directly (not recommended)
+
+When a `context7ApiKey` argument is provided in a tool call, it overrides any key resolved from the server configuration for that request only.
+
 #### Option 1: Using System Keyring (Recommended)
 
 For secure storage, store your API key in your system keyring and reference it in the configuration:
@@ -217,7 +225,8 @@ You MUST call this function before `query_docs` to obtain a valid Context7-compa
 ```json
 {
   "libraryName": "string (required) - Library name to search for",
-  "query": "string (required) - The question or task you need help with"
+  "query": "string (required) - The question or task you need help with",
+  "context7ApiKey": "string (optional) - Context7 API key for authenticated access. Overrides any server-configured key for this request."
 }
 ```
 
@@ -226,6 +235,15 @@ You MUST call this function before `query_docs` to obtain a valid Context7-compa
 {
   "libraryName": "react",
   "query": "How to use hooks in React"
+}
+```
+
+**Example Input (with API key):**
+```json
+{
+  "libraryName": "react",
+  "query": "How to use hooks in React",
+  "context7ApiKey": "your-api-key-here"
 }
 ```
 
@@ -278,11 +296,11 @@ Returns a structured response with matching libraries including:
 
 You must call `resolve_library_id` first to obtain the exact Context7-compatible library ID required to use this tool, UNLESS the user explicitly provides a library ID in the format `/org/project` or `/org/project/version` in their query.
 
-This tool makes two parallel requests to the Context7 API:
-- A **text** request (`type=txt`) for human-readable Markdown documentation
-- A **JSON** request (`type=json`) for structured code snippets and documentation metadata
+The `type` parameter controls the response format:
+- **`json`** (default) – Makes a single request for structured code snippets and documentation metadata, returned as `structuredContent`.
+- **`text`** – Makes a single request for human-readable Markdown documentation, returned as text `content`.
 
-The Markdown is returned as the text content, and the structured JSON is returned as `structuredContent`.
+Only one request is made per call, determined by the `type` parameter.
 
 **IMPORTANT:** Do not call this tool more than 3 times per question. If you cannot find what you need after 3 calls, use the best information you have.
 
@@ -290,7 +308,9 @@ The Markdown is returned as the text content, and the structured JSON is returne
 ```json
 {
   "libraryId": "string (required) - Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js')",
-  "query": "string (required) - Your specific question or task"
+  "query": "string (required) - Your specific question or task",
+  "type": "string (optional) - Response format: 'text' for markdown, 'json' for structured JSON. Defaults to 'json'.",
+  "context7ApiKey": "string (optional) - Context7 API key for authenticated access. Overrides any server-configured key for this request."
 }
 ```
 
@@ -302,11 +322,22 @@ The Markdown is returned as the text content, and the structured JSON is returne
 }
 ```
 
-**Text Output:**
-Returns Markdown-formatted documentation and code examples relevant to your query.
+**Example Input (with API key):**
+```json
+{
+  "libraryId": "/vercel/next.js",
+  "query": "How to implement server-side rendering in Next.js 14",
+  "context7ApiKey": "your-api-key-here"
+}
+```
 
-**Structured Output:**
-Returns a JSON object with the following structure:
+**Output when `type` is `text`:**
+
+Returns Markdown-formatted documentation and code examples as text content. No structured content is included.
+
+**Output when `type` is `json` (default):**
+
+Returns structured content as a JSON object with the following structure (no text content is included):
 
 - `codeSnippets`: Array of relevant code snippets, each containing:
   - `codeTitle`: Title of the code snippet
@@ -474,7 +505,7 @@ The plugin uses the Context7 API:
 ### Request Headers
 - `X-Context7-Source: hyper-mcp/context7-plugin`
 - `X-Context7-Server-Version: {version}`
-- `Authorization: Bearer {api_key}` (when API key is configured)
+- `Authorization: Bearer {api_key}` (when API key is configured or passed via `context7ApiKey` argument)
 
 ## Privacy & Security
 
