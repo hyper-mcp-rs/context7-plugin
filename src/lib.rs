@@ -217,16 +217,14 @@ fn http_request_with_retry(req: &HttpRequest) -> Result<HttpResponse> {
             Ok(res) => {
                 let status = res.status_code();
 
-                if status == 429 || status >= 500 {
-                    if attempt < MAX_HTTP_ATTEMPTS {
-                        thread::sleep(
-                            res.header("retry-after")
-                                .or_else(|| res.header("Retry-After"))
-                                .and_then(parse_retry_after)
-                                .unwrap_or(RETRY_DELAY),
-                        );
-                        continue;
-                    }
+                if attempt < MAX_HTTP_ATTEMPTS && (status == 429 || status >= 500) {
+                    thread::sleep(
+                        res.header("retry-after")
+                            .or_else(|| res.header("Retry-After"))
+                            .and_then(parse_retry_after)
+                            .unwrap_or(RETRY_DELAY),
+                    );
+                    continue;
                 }
                 break Ok(res);
             }
