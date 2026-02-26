@@ -133,6 +133,14 @@ pub(crate) struct QueryDocsResponse {
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct ClearCacheArguments {}
 
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
+pub(crate) enum QueryDocsType {
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "json")]
+    Json,
+}
+
 #[derive(Default, Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct QueryDocsArguments {
     #[schemars(
@@ -150,4 +158,14 @@ pub(crate) struct QueryDocsArguments {
         confidential information such as API keys, passwords, credentials, personal data, or proprietary code in your query."
     )]
     pub query: String,
+
+    #[schemars(
+        description = "The response format type. Use 'text' to receive markdown in the text content, \
+        or 'json' to receive structured JSON in the structured content. If omitted, both text and \
+        structured content are returned."
+    )]
+    #[serde(rename = "type")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub r#type: Option<QueryDocsType>,
 }

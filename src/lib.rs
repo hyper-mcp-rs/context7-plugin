@@ -10,7 +10,7 @@ use anyhow::Result;
 use extism_pdk::*;
 use pdk::types::*;
 use schemars::schema_for;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::sync::OnceLock;
 use url::Url;
 
@@ -171,137 +171,116 @@ impl Context7Headers for HttpRequest {
 }
 
 fn query_docs(input: CallToolRequest) -> CallToolResult {
-    let args: QueryDocsArguments =
+    let mut args: QueryDocsArguments =
         match serde_json::from_value(Value::Object(input.request.arguments.unwrap_or_default())) {
             Ok(args) => args,
             Err(e) => return CallToolResult::error(format!("Invalid arguments: {e}")),
         };
 
+    if args.r#type.is_none() {
+        args.r#type = Some(QueryDocsType::Json);
+    }
+
     if let Some(cached) = cache::get("query_docs", &args) {
         return cached;
     }
 
-    let base_url = match Url::parse(&format!("{}/v2/context", CONTEXT7_API_BASE_URL)) {
+    let mut base_url = match Url::parse(&format!("{}/v2/context", CONTEXT7_API_BASE_URL)) {
         Ok(url) => url,
         Err(e) => {
             return CallToolResult::error(e.to_string());
         }
     };
-
-    // Build the text (markdown) request
-    let mut txt_url = base_url.clone();
-    txt_url
+    base_url
         .query_pairs_mut()
         .append_pair("libraryId", &args.library_id)
-        .append_pair("query", &args.query)
-        .append_pair("type", "txt");
+        .append_pair("query", &args.query);
 
-    let txt_req = HttpRequest::new(txt_url.as_str())
-        .with_method("GET")
-        .insert_context7_headers();
+    // Fetch text content if requested
+    let content: Vec<ContentBlock> = if matches!(args.r#type, Some(QueryDocsType::Text)) {
+        let mut txt_url = base_url.clone();
+        txt_url.query_pairs_mut().append_pair("type", "txt");
 
-    // Build the JSON request
-    let mut json_url = base_url;
-    json_url
-        .query_pairs_mut()
-        .append_pair("libraryId", &args.library_id)
-        .append_pair("query", &args.query)
-        .append_pair("type", "json");
+        let txt_req = HttpRequest::new(txt_url.as_str())
+            .with_method("GET")
+            .insert_context7_headers();
 
-    let json_req = HttpRequest::new(json_url.as_str())
-        .with_method("GET")
-        .insert_context7_headers();
+        let res = match http::request::<()>(&txt_req, None) {
+            Ok(res) => res,
+            Err(e) => return CallToolResult::error(format!("Text request failed: {}", e)),
+        };
 
-    // Execute the text request
-    let txt_result = http::request::<()>(&txt_req, None);
-    // Execute the JSON request
-    let json_result = http::request::<()>(&json_req, None);
-
-    // Process the text response for content
-    let text_content = match txt_result {
-        Ok(res) => {
-            let body = String::from_utf8_lossy(&res.body()).to_string();
-            if res.status_code() >= 200 && res.status_code() < 300 {
-                Ok(body)
-            } else {
-                Err(format!(
-                    "Text API request failed with status {}: {}",
-                    res.status_code(),
-                    body,
-                ))
-            }
+        let body = String::from_utf8_lossy(&res.body()).to_string();
+        if res.status_code() < 200 || res.status_code() >= 300 {
+            return CallToolResult::error(format!(
+                "Text API request failed with status {}: {}",
+                res.status_code(),
+                body,
+            ));
         }
-        Err(e) => Err(e.to_string()),
+
+        vec![ContentBlock::Text(TextContent {
+            text: body,
+            ..Default::default()
+        })]
+    } else {
+        vec![]
     };
 
-    // Process the JSON response for structured content
-    let structured_content = match json_result {
-        Ok(res) => {
+    // Fetch JSON content if requested (also the default when type is omitted)
+    let structured_content: Option<Map<String, Value>> =
+        if matches!(args.r#type, Some(QueryDocsType::Json)) {
+            let mut json_url = base_url;
+            json_url.query_pairs_mut().append_pair("type", "json");
+
+            let json_req = HttpRequest::new(json_url.as_str())
+                .with_method("GET")
+                .insert_context7_headers();
+
+            let res = match http::request::<()>(&json_req, None) {
+                Ok(res) => res,
+                Err(e) => return CallToolResult::error(format!("JSON request failed: {}", e)),
+            };
+
             let body = String::from_utf8_lossy(&res.body()).to_string();
-            if res.status_code() >= 200 && res.status_code() < 300 {
-                match serde_json::from_str::<QueryDocsResponse>(&body) {
-                    Ok(response) => match serde_json::to_value(response) {
-                        Ok(Value::Object(map)) => Ok(map),
-                        _ => Err("Failed to convert QueryDocsResponse to JSON object".to_string()),
-                    },
-                    Err(e) => Err(format!("Failed to deserialize JSON response: {}", e)),
-                }
-            } else {
-                Err(format!(
+            if res.status_code() < 200 || res.status_code() >= 300 {
+                return CallToolResult::error(format!(
                     "JSON API request failed with status {}: {}",
                     res.status_code(),
                     body,
-                ))
+                ));
             }
-        }
-        Err(e) => Err(e.to_string()),
-    };
 
-    // Combine results: text content is required, structured content is best-effort
-    match text_content {
-        Ok(text) => {
-            let mut result = CallToolResult {
-                content: vec![ContentBlock::Text(TextContent {
-                    text,
-
-                    ..Default::default()
-                })],
-
-                ..Default::default()
+            let response: QueryDocsResponse = match serde_json::from_str(&body) {
+                Ok(r) => r,
+                Err(e) => {
+                    return CallToolResult::error(format!(
+                        "Failed to deserialize JSON response: {}",
+                        e
+                    ));
+                }
             };
 
-            if let Ok(map) = structured_content {
-                result.structured_content = Some(map);
-            }
-
-            cache::put("query_docs", &args, &result);
-            result
-        }
-        Err(txt_err) => {
-            // If text failed but JSON succeeded, return stringified JSON as text
-            // content along with the structured
-            match structured_content {
-                Ok(map) => {
-                    let result = CallToolResult {
-                        content: vec![ContentBlock::Text(TextContent {
-                            text: serde_json::to_string(&map).unwrap_or_default(),
-
-                            ..Default::default()
-                        })],
-                        structured_content: Some(map),
-
-                        ..Default::default()
-                    };
-                    cache::put("query_docs", &args, &result);
-                    result
+            match serde_json::to_value(response) {
+                Ok(Value::Object(map)) => Some(map),
+                _ => {
+                    return CallToolResult::error(
+                        "Failed to convert QueryDocsResponse to JSON object".to_string(),
+                    );
                 }
-                Err(json_err) => CallToolResult::error(format!(
-                    "Text request failed: {}. JSON request failed: {}",
-                    txt_err, json_err
-                )),
             }
-        }
-    }
+        } else {
+            None
+        };
+
+    let result = CallToolResult {
+        content,
+        structured_content,
+        ..Default::default()
+    };
+
+    cache::put("query_docs", &args, &result);
+    result
 }
 
 fn resolve_library_id(input: CallToolRequest) -> CallToolResult {
