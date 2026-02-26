@@ -1,10 +1,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 
 // --- resolve_library_id request/response types ---
 
-#[derive(Default, Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct ResolveLibraryIdArguments {
     #[schemars(
         description = "Library name to search for and retrieve a Context7-compatible library ID."
@@ -25,6 +25,14 @@ pub(crate) struct ResolveLibraryIdArguments {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub context7_api_key: Option<String>,
+}
+
+/// Hash excludes `context7_api_key` so cache lookups are key-agnostic.
+impl Hash for ResolveLibraryIdArguments {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.library_name.hash(state);
+        self.query.hash(state);
+    }
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -147,7 +155,7 @@ pub(crate) enum QueryDocsType {
     Json,
 }
 
-#[derive(Default, Debug, Clone, Hash, Serialize, Deserialize, JsonSchema)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct QueryDocsArguments {
     #[schemars(
         description = "Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js', '/supabase/supabase', \
@@ -180,4 +188,13 @@ pub(crate) struct QueryDocsArguments {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub context7_api_key: Option<String>,
+}
+
+/// Hash excludes `context7_api_key` so cache lookups are key-agnostic.
+impl Hash for QueryDocsArguments {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.library_id.hash(state);
+        self.query.hash(state);
+        self.r#type.hash(state);
+    }
 }

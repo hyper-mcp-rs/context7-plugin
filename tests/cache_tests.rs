@@ -139,7 +139,7 @@ impl CallToolResult {
 // Duplicated argument types (must match Hash behaviour from types.rs)
 // ---------------------------------------------------------------------------
 
-#[derive(Default, Debug, Clone, Hash, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct ResolveLibraryIdArguments {
     #[serde(rename = "libraryName")]
     pub library_name: String,
@@ -150,7 +150,15 @@ struct ResolveLibraryIdArguments {
     pub context7_api_key: Option<String>,
 }
 
-#[derive(Default, Debug, Clone, Hash, Serialize, Deserialize)]
+/// Hash excludes `context7_api_key` so cache lookups are key-agnostic.
+impl Hash for ResolveLibraryIdArguments {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.library_name.hash(state);
+        self.query.hash(state);
+    }
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 struct QueryDocsArguments {
     #[serde(rename = "libraryId")]
     pub library_id: String,
@@ -159,6 +167,14 @@ struct QueryDocsArguments {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub context7_api_key: Option<String>,
+}
+
+/// Hash excludes `context7_api_key` so cache lookups are key-agnostic.
+impl Hash for QueryDocsArguments {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.library_id.hash(state);
+        self.query.hash(state);
+    }
 }
 
 // ---------------------------------------------------------------------------
