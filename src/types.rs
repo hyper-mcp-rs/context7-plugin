@@ -175,8 +175,8 @@ pub(crate) struct QueryDocsArguments {
 
     #[schemars(
         description = "The response format type. Use 'text' to receive markdown in the text content, \
-        or 'json' to receive structured JSON in the structured content. If omitted, both text and \
-        structured content are returned."
+        or 'json' to receive structured JSON in the structured content. If omitted \
+        structured content is returned."
     )]
     #[serde(rename = "type")]
     #[serde(skip_serializing_if = "Option::is_none")]
