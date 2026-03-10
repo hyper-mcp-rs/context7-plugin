@@ -132,7 +132,7 @@ async fn test_resolve_library_id_response_with_results() {
 async fn test_resolve_library_id_response_with_any_results() {
     // Use an unusual library name that may or may not have results
     // The API may return fuzzy matches, so we just test deserialization works
-    let library_name = "zxcvbnmasdfghjklqwertyuiop12345nonexistent";
+    let library_name = "zxcvbnmasdfghjklqwertyuiop12345";
     let query = "some random query";
 
     let mut url = Url::parse(&format!("{}/v2/libs/search", CONTEXT7_API_BASE_URL))
