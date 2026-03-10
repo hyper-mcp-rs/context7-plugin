@@ -276,7 +276,7 @@ fn query_docs(input: CallToolRequest) -> CallToolResult {
 
         let res = match http_request_with_retry(&txt_req) {
             Ok(res) => res,
-            Err(e) => return CallToolResult::error(format!("Text request failed: {}", e)),
+            Err(e) => return CallToolResult::error(format!("Text API request failed: {}", e)),
         };
 
         let body = String::from_utf8_lossy(&res.body()).to_string();
@@ -305,7 +305,7 @@ fn query_docs(input: CallToolRequest) -> CallToolResult {
 
             let res = match http_request_with_retry(&json_req) {
                 Ok(res) => res,
-                Err(e) => return CallToolResult::error(e.to_string()),
+                Err(e) => return CallToolResult::error(format!("JSON API request failed: {}", e)),
             };
 
             let body = String::from_utf8_lossy(&res.body()).to_string();
