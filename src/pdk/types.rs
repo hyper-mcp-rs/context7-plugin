@@ -2,10 +2,11 @@
 use base64::engine::general_purpose::STANDARD;
 use base64_serde::base64_serde_type;
 use extism_pdk::{FromBytes, Json, ToBytes};
+use oauth2::{ClientId, ClientSecret, DeviceAuthorizationUrl, Scope, TokenUrl};
 use schemars::Schema as JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Number, Value};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::SystemTime};
 
 base64_serde_type!(Base64Standard, STANDARD);
 
@@ -35,6 +36,29 @@ pub struct Annotations {
 
     /// Priority level indicating the importance of the resource
     pub priority: f32,
+}
+
+/// An access token returned by the host's OAuth2 token management.
+///
+/// The host handles token acquisition, caching, and refresh transparently.
+/// Plugins receive a ready-to-use bearer token.
+#[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
+#[encoding(Json)]
+pub struct AccessToken {
+    /// The bearer token.
+    pub access_token: oauth2::AccessToken,
+    /// When the token expires (if known).
+    pub expires_at: Option<SystemTime>,
+    /// The scopes granted by the token (if known).
+    pub scopes: Option<Vec<Scope>>,
+}
+
+/// The type of client authentication to use when talking to the token endpoint.
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AuthType {
+    RequestBody,
+    BasicAuth,
 }
 
 #[derive(Default, Debug, Clone, FromBytes, ToBytes)]
@@ -221,20 +245,6 @@ pub struct CallToolRequest {
     pub request: CallToolRequestParam,
 }
 
-impl CallToolResult {
-    /// Creates an error `CallToolResult` with the given message.
-    pub fn error(error: String) -> CallToolResult {
-        CallToolResult {
-            is_error: Some(true),
-            content: vec![ContentBlock::Text(TextContent {
-                text: error,
-                ..Default::default()
-            })],
-            ..Default::default()
-        }
-    }
-}
-
 #[derive(Default, Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Json)]
 pub struct CallToolRequestParam {
@@ -270,6 +280,20 @@ pub struct CallToolResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub structured_content: Option<Map<String, Value>>,
+}
+
+impl CallToolResult {
+    /// Creates an error `CallToolResult` with the given message.
+    pub fn error(error: String) -> CallToolResult {
+        CallToolResult {
+            is_error: Some(true),
+            content: vec![ContentBlock::Text(TextContent {
+                text: error,
+                ..Default::default()
+            })],
+            ..Default::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
@@ -976,6 +1000,32 @@ pub enum NumberType {
     Integer,
 }
 
+/// Credentials needed to obtain an OAuth2 access token from the host.
+///
+/// Pass this to [`get_access_token`](super::imports::get_access_token) and
+/// the host will return a cached or freshly-acquired [`AccessToken`].
+#[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
+#[encoding(Json)]
+pub struct OauthCredentials {
+    /// How to authenticate at the token endpoint.
+    pub auth_type: Option<AuthType>,
+    /// The OAuth2 client ID.
+    pub client_id: ClientId,
+    /// The OAuth2 client secret (if required).
+    pub client_secret: Option<ClientSecret>,
+    /// Device authorization endpoint URL. When present the host will use the
+    /// device-code flow (with user elicitation) instead of client-credentials.
+    pub device_authorization_url: Option<DeviceAuthorizationUrl>,
+    /// Timeout in seconds for the device authorization flow. Defaults to 180 (3 minutes).
+    pub device_auth_timeout_secs: Option<u64>,
+    /// Extra parameters to send to the token endpoint.
+    pub extra_params: Option<HashMap<String, String>>,
+    /// Scopes to request.
+    pub scopes: Option<Vec<Scope>>,
+    /// The token endpoint URL.
+    pub token_endpoint_url: TokenUrl,
+}
+
 #[derive(Default, Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
 #[encoding(Json)]
 pub struct PluginNotificationContext {
@@ -1039,12 +1089,26 @@ pub struct ProgressNotificationParam {
 
     /// A token identifying the progress context
     #[serde(rename = "progressToken")]
-    pub progress_token: String,
+    pub progress_token: ProgressToken,
 
     /// Optional total units of work
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub total: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
+#[encoding(Json)]
+#[serde(untagged)]
+pub enum ProgressToken {
+    String(String),
+    Number(i64),
+}
+
+impl Default for ProgressToken {
+    fn default() -> Self {
+        ProgressToken::String(String::new())
+    }
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, FromBytes, ToBytes)]
